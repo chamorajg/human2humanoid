@@ -1,0 +1,53 @@
+defaults:
+  - ppo_base
+
+distill: False
+distill_model_config: 
+  obs_v: v-teleop-extend-max-full
+  extend_head: True
+  future_tracks: True
+  num_traj_samples: 5
+  teleop_selected_keypoints_names : [ 'torso_link',  'L_buttock', 'L_leg','L_thigh', 'L_calf', 'L_foot', 'R_buttock', 'R_leg', 'R_thigh', 'R_calf', 'R_foot', 'L_clav', 'L_scapula', 'L_uarm', 'L_farm',  'R_clav', 'R_scapula', 'R_uarm', 'R_farm']
+  num_observations: 561
+  num_privileged_obs: 634
+
+add_short_history: False
+short_history_length: 5
+
+algorithm:
+    # training params
+    value_loss_coef : 1.0
+    use_clipped_value_loss : True
+    clip_param : 0.2
+    entropy_coef : 0.005
+    num_learning_epochs : 5
+    num_mini_batches : 4 # mini batch size : num_envs*nsteps / nminibatches
+    learning_rate : 1.e-3 #5.e-4
+    schedule : 'adaptive' # could be adaptive, fixed
+    gamma : 0.99
+    lam : 0.95
+    desired_kl : 0.01
+    max_grad_norm : 0.2
+    action_smoothness_coef : 0.000 # 0.003
+    
+runner:
+    policy_class_name : 'ActorCritic'
+    run_name : ''
+    experiment_name : 'stompypro:teleop'
+    max_iterations : 10000000
+    has_eval : False
+    eval_interval: 2500
+    auto_negative_samping: False
+policy:
+    rnn_type : 'lstm'
+    init_noise_std : 1.0
+    actor_hidden_dims : [512, 256, 128]
+    # actor_hidden_dims : [512*4, 256*4, 128*4]
+    critic_hidden_dims : [512, 256, 128]
+    # critic_hidden_dims : [512*4, 256*4, 128*4]
+dagger:
+  ###### Dagger ########
+  load_run_dagger: ""
+  checkpoint_dagger: 0
+  dagger_only: False
+  dagger_anneal: False

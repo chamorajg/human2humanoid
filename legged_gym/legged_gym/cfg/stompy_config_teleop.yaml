@@ -1,0 +1,81 @@
+defaults:
+  - _self_
+  - asset: stompy_asset_teleop
+  - commands: stompy_commands_teleop
+  - control: stompy_control_teleop
+  - domain_rand: stompy_domain_rand_teleop
+  - env: stompy_env_teleop
+  - init_state: stompy_init_state_teleop
+  - motion: stompy_motion_teleop
+  - noise: stompy_noise_teleop
+  - normalization: stompy_normalization_teleop
+  - train: stompy_ppo_teleop
+  - rewards: stompy_rewards_teleop
+  - sim: stompy_sim_teleop
+  - terrain: stompy_terrain_teleop
+  - viewer: viewer_base
+
+
+project_name: "Stompy"
+notes: "Default Notes"
+exp_name: &exp_name humanoid_smpl
+headless: True
+seed: 1
+no_log: False
+test: False 
+sim_device: "cuda:0"
+rl_device: "cuda:0"
+sim_device_id: 0
+metadata: false
+play: ${test}
+train: True
+im_dump: False
+task: "stompypro:teleop"
+load_run: ""
+num_envs: 4096
+checkpoint: 0
+
+joystick: False
+tmp_freeze_upper: False
+max_iterations: 1000000
+horovod: False
+resume: False
+experiment_name: null
+run_name: null
+compute_device_id: 0
+graphics_device_id: 0
+flex: False
+
+use_gpu: True
+use_gpu_pipeline: True
+subscenes: 0
+slices: 0
+num_threads: 0
+
+
+####### Testing Configs. ########
+server_mode: False
+no_virtual_display: False
+render_o3d: False
+debug: False
+follow: False
+add_proj: False
+real_traj: False
+
+hydra:
+  job:
+    name: ${exp_name}
+    env_set:
+      OMP_NUM_THREADS: 1
+  run:
+    dir: output/stompypro/${exp_name}
+
+use_wandb: True
+
+
+###### velocity estimation ########
+train_velocity_estimation: False
+use_velocity_estimation: False
+
+# python legged_gym/scripts/train_hydra.py --config-name=stompy_config_teleop task=stompypro:teleop run_name=OmniH2O_TEACHER motion.teleop_obs_version=v-teleop-extend-max-full motion=stompy_motion_teleop motion.extend_head=True num_envs=2048 asset.zero_out_far=False asset.termination_scales.max_ref_motion_distance=1.5 sim_device=cuda:1 motion.motion_file=resources/motions/stompy/amass_train.pkl rewards=stompy_rewards_teleop rewards.penalty_curriculum=True rewards.penalty_scale=0.5 env.num_observations=561 env.num_privileged_obs=634
+# python legged_gym/scripts/play_hydra.py --config-name=stompy_config_teleop task=stompypro:teleop env.num_observations=564 env.num_privileged_obs=631 motion.future_tracks=True motion.teleop_obs_version=v-teleop-extend-max-full motion=stompy_motion_teleop  motion.extend_head=True asset.zero_out_far=False asset.termination_scales.max_ref_motion_distance=10.0  sim_device=cuda:1 checkpoint=-1 num_envs=1 headless=False motion.motion_file=resources/motions/stompy/amass_train.pkl load_run=24_10_22_18-36-18_OmniH2O_TEACHER

@@ -1,0 +1,26 @@
+pos : [0.0, 0.0, 1.0] # xyz [m]
+rot : [0.0, 0.0, 0.0, 1.0] # x,y,z,w [quat]
+lin_vel : [0.0, 0.0, 0.0]  # x,y,z [m/s]
+ang_vel : [0.0, 0.0, 0.0]  # x,y,z [rad/s]
+max_linvel : 0.5
+max_angvel : 0.5
+default_joint_angles :  # : target angles [rad] when action : 0.0
+    torso_joint : 0.
+    L_hip_y : -0.04485 
+    L_hip_z : 1.57102
+    L_hip_x : 1.53816
+    L_knee : 0.14658
+    L_ankle_y : -1.49738
+    R_hip_y : 3.14
+    R_hip_z : 3.15
+    R_hip_x : -3.18
+    R_knee : 0.
+    R_ankle_y : -0.19             
+    L_shoulder_y : 2.06 
+    L_shoulder_z : -0.656 
+    L_shoulder_x : 1.34
+    L_elbow_x  : -0.241
+    R_shoulder_y : 0.0987
+    R_shoulder_z : 0.0264
+    R_shoulder_x : -2.87
+    R_elbow_x : 2.85

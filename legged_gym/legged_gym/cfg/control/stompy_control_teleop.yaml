@@ -1,0 +1,26 @@
+
+control_type : 'P'
+  # PD Drive parameters:
+stiffness : 
+  hip: 200
+  knee: 300
+  ankle: 40
+  torso: 300
+  shoulder: 100
+  elbow: 100 # [N*m/rad]
+
+damping : 
+  hip: 5
+  knee: 6
+  ankle: 2
+  torso: 6
+  shoulder: 2
+  elbow: 2 # [N*m/rad]  # [N*m*s/rad]
+
+action_scale : 0.25
+# decimation: Number of control action updates @ sim DT per policy DT
+decimation : 4 # 4
+
+# action_filt : False
+action_filt : False
+action_cutfreq : 4.0
