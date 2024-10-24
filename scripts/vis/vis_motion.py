@@ -22,6 +22,7 @@ import numpy as np
 from isaacgym import gymapi, gymutil, gymtorch
 import torch
 from phc.utils.motion_lib_h1 import MotionLibH1
+from phc.utils.motion_lib_stompy import MotionLibStompy
 from poselib.skeleton.skeleton3d import SkeletonTree
 from phc.utils.flags import flags
 
@@ -43,19 +44,14 @@ class AssetDesc:
         self.flip_visual_attachments = flip_visual_attachments
 
 
-h1_xml = "resources/robots/h1/h1.xml"
-h1_urdf = "resources/robots/h1/urdf/h1.urdf"
+asset_xml = "legged_gym/resources/robots/stompypro/robot_test.xml"
+asset_urdf = "legged_gym/resources/robots/stompypro/robot_test.urdf"
 asset_descriptors = [
     # AssetDesc(h1_xml, False),
-    AssetDesc(h1_urdf, False),
+    AssetDesc(asset_urdf, False),
 ]
-sk_tree = SkeletonTree.from_mjcf(h1_xml)
-motion_file = "/home/wenli-car/humanoid_teleoperation/legged_gym/resources/motions/h1/wave_and_walk_unfiltered.pkl"
-
-
-# motion_file = "data/h1/singles/0-KIT_3_walking_slow08_poses.pkl"
-# motion_file = "data/h1/singles/test.pkl"
-# motion_file = "data/h1/amass_test.pkl"
+sk_tree = SkeletonTree.from_mjcf(asset_xml)
+motion_file = "/home/kasm-user/human2humanoid/data/stompy/amass_train.pkl"
 
 # parse arguments
 args = gymutil.parse_arguments(description="Joint monkey: Animate degree-of-freedom ranges",
@@ -118,7 +114,7 @@ if viewer is None:
 
 # load asset
 # asset_root = "amp/data/assets"
-asset_root = "./"
+asset_root = "/home/kasm-user/human2humanoid"
 asset_file = asset_descriptors[args.asset_id].file_name
 
 asset_options = gymapi.AssetOptions()
@@ -129,6 +125,7 @@ asset_options.use_mesh_materials = True
 
 print("Loading asset '%s' from '%s'" % (asset_file, asset_root))
 asset = gym.load_asset(sim, asset_root, asset_file, asset_options)
+print(asset)
 
 # set up the env grid
 num_envs = 1
@@ -172,10 +169,10 @@ gym.prepare_sim(sim)
 
 device = (torch.device("cuda", index=0) if torch.cuda.is_available() else torch.device("cpu"))
 
-motion_lib = MotionLibH1(motion_file=motion_file, device=device, masterfoot_conifg=None, fix_height=False, multi_thread=False, mjcf_file=h1_xml)
-num_motions = 1300
+motion_lib = MotionLibStompy(motion_file=motion_file, device=device, masterfoot_conifg=None, fix_height=False, multi_thread=False, mjcf_file=asset_xml)
+num_motions = 10
 curr_start = 0
-motion_lib.load_motions(skeleton_trees=[sk_tree] * num_motions, gender_betas=[torch.zeros(17)] * num_motions, limb_weights=[np.zeros(10)] * num_motions, random_sample=False)
+motion_lib.load_motions(skeleton_trees=[sk_tree] * num_motions, gender_betas=[torch.zeros(18)] * num_motions, limb_weights=[np.zeros(10)] * num_motions, random_sample=False)
 motion_keys = motion_lib.curr_motion_keys
 
 current_dof = 0
@@ -187,6 +184,7 @@ rigidbody_state = gymtorch.wrap_tensor(rigidbody_state)
 rigidbody_state = rigidbody_state.reshape(num_envs, -1, 13)
 
 actor_root_state = gym.acquire_actor_root_state_tensor(sim)
+print(actor_root_state.shape)
 actor_root_state = gymtorch.wrap_tensor(actor_root_state)
 
 gym.subscribe_viewer_keyboard_event(viewer, gymapi.KEY_LEFT, "previous")
@@ -210,7 +208,7 @@ sphere_params = gymapi.AssetOptions()
 
 sphere_asset = gym.create_sphere(sim, radius, sphere_params)
 
-num_spheres = 19
+num_spheres = 18
 init_positions = gymapi.Vec3(0.0, 0.0, 0.0)
 spacing = 0.
 
