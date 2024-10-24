@@ -30,7 +30,7 @@ command_state = {
 
 override = False
 
-EXPORT_ONNX = True
+EXPORT_ONNX = False
 
 
 def dict_compare(d1, d2):
@@ -144,9 +144,10 @@ def play(cfg_hydra: DictConfig) -> None:
     # load policy
     train_cfg.runner.resume = True
     
-    
+    print(env.device)
     ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=cfg_hydra.task, args=cfg_hydra, train_cfg=train_cfg)
     
+    print(env.device)
     policy = ppo_runner.get_inference_policy(device=env.device)
     exported_policy_name = str(task_registry.loaded_policy_path.split('/')[-2]) + str(task_registry.loaded_policy_path.split('/')[-1])
     print('Loaded policy from: ', task_registry.loaded_policy_path)
@@ -242,7 +243,7 @@ def play(cfg_hydra: DictConfig) -> None:
 
 if __name__ == '__main__':
     EXPORT_POLICY = False
-    RECORD_FRAMES = False
+    RECORD_FRAMES = True
     MOVE_CAMERA = False
     # args = get_args()
     play()

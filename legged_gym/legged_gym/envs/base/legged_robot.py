@@ -1570,7 +1570,6 @@ class LeggedRobot(BaseTask):
                     ref_body_vel_subset = self.realtime_vr_keypoints_vel
                     assert self.cfg.motion.num_traj_samples == 1
 
-                
                 self_obs = compute_humanoid_observations_max_full(body_pos_extend, body_rot_extend, body_vel_extend, body_ang_vel_extend, True, False) # 342
                 # 22 * 3 + 23 * 6 + 23 * 3 + 23 * 3  = 342 | pos, rot, vel, ang_vel
                 task_obs = compute_imitation_observations_max_full(root_pos, root_rot, body_pos_subset, body_rot_subset, body_vel_subset, body_ang_vel_subset,  ref_rb_pos_subset, ref_rb_rot_subset, ref_body_vel_subset, ref_body_ang_vel_subset,   \
