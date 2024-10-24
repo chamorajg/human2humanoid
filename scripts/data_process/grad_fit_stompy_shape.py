@@ -27,18 +27,18 @@ from tqdm.notebook import tqdm
 from smpl_sim.smpllib.smpl_joint_names import SMPL_MUJOCO_NAMES, SMPL_BONE_ORDER_NAMES, SMPLH_BONE_ORDER_NAMES, SMPLH_MUJOCO_NAMES
 from phc.utils.torch_stompy_humanoid_batch import Stompy_Batch, STOMPY_ROTATION_AXIS
 stompy_joint_names = [
-                      'torso_link',
+                    #   'torso_link',
                       'L_buttock', 'L_leg', 'L_thigh', 'L_calf', 'L_foot', 
-                      'R_buttock', 'R_leg', 'R_thigh', 'R_calf', 'R_foot',
                       'L_clav', 'L_scapula', 'L_uarm', 'L_farm', 
+                      'R_buttock', 'R_leg', 'R_thigh', 'R_calf', 'R_foot',
                       'R_clav', 'R_scapula', 'R_uarm', 'R_farm']
 
 
 stompy_fk = Stompy_Batch(extend_head=True) # load forward kinematics model
 #### Define corresonpdances between h1 and smpl joints
 stompy_joint_names_augment = stompy_joint_names + ["left_hand_keypoint_link", "right_hand_keypoint_link", "head_link"]
-stompy_joint_pick = ['L_thigh', "L_calf", "L_foot", "L_scapula", "L_farm",  'R_thigh', 'R_calf', 'R_foot', "R_scapula", "R_farm", "left_hand_keypoint_link", "right_hand_keypoint_link", "head_link"]
-smpl_joint_pick = ["L_Hip",  "L_Knee", "L_Ankle", "L_Shoulder", "L_Elbow", "L_Hand",  "R_Hip", "R_Knee", "R_Ankle", "R_Shoulder", "R_Elbow", "R_Hand", "Head"]
+stompy_joint_pick = ['L_thigh', "L_calf", "L_foot", "L_scapula", "L_uarm", "L_farm",  'R_thigh', 'R_calf', 'R_foot', "R_scapula", "R_uarm", "R_farm", "left_hand_keypoint_link", "right_hand_keypoint_link", "head_link"]
+smpl_joint_pick = ["L_Hip",  "L_Knee", "L_Ankle", "L_Shoulder", "L_Elbow",  "L_Wrist", "R_Hip", "R_Knee", "R_Ankle", "R_Shoulder", "R_Elbow", "R_Wrist", "L_Hand",  "R_Hand", "Head"]
 stompy_joint_pick_idx = [ stompy_joint_names_augment.index(j) for j in stompy_joint_pick]
 smpl_joint_pick_idx = [SMPL_BONE_ORDER_NAMES.index(j) for j in smpl_joint_pick]
 

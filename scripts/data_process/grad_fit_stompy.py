@@ -62,15 +62,15 @@ stompy_rotation_axis = torch.tensor([
 stompy_joint_names = [
                     #   'torso_link',
                       'L_buttock', 'L_leg', 'L_thigh', 'L_calf', 'L_foot', 
-                      'R_buttock', 'R_leg', 'R_thigh', 'R_calf', 'R_foot',
                       'L_clav', 'L_scapula', 'L_uarm', 'L_farm', 
+                      'R_buttock', 'R_leg', 'R_thigh', 'R_calf', 'R_foot',
                       'R_clav', 'R_scapula', 'R_uarm', 'R_farm']
 
 
 #### Define corresonpdances between h1 and smpl joints
 stompy_joint_names_augment = stompy_joint_names + ["left_hand_keypoint_link", "right_hand_keypoint_link", "head_link"]
-stompy_joint_pick = ['L_thigh', "L_calf", "L_foot",  'R_thigh', 'R_calf', 'R_foot', "L_scapula", "L_farm", "left_hand_keypoint_link", "R_scapula", "R_farm", "right_hand_keypoint_link"]
-smpl_joint_pick = ["L_Hip",  "L_Knee", "L_Ankle",  "R_Hip", "R_Knee", "R_Ankle", "L_Shoulder", "L_Elbow", "L_Hand", "R_Shoulder", "R_Elbow", "R_Hand"]
+stompy_joint_pick = ['L_thigh', "L_calf", "L_foot", "L_scapula", "L_uarm", "L_farm",  'R_thigh', 'R_calf', 'R_foot', "R_scapula", "R_uarm", "R_farm", "left_hand_keypoint_link", "right_hand_keypoint_link"]
+smpl_joint_pick = ["L_Hip",  "L_Knee", "L_Ankle", "L_Shoulder", "L_Elbow", "L_Wrist", "R_Hip", "R_Knee", "R_Ankle", "R_Shoulder", "R_Elbow", "R_Wrist", "L_Hand", "R_Hand"]
 stompy_joint_pick_idx = [ stompy_joint_names_augment.index(j) for j in stompy_joint_pick]
 smpl_joint_pick_idx = [SMPL_BONE_ORDER_NAMES.index(j) for j in smpl_joint_pick]
 
@@ -87,6 +87,7 @@ shape_new = shape_new.to(device)
 stompy_fk = Stompy_Batch(device = device)
 data_dump = {}
 pbar = tqdm(amass_data.keys())
+count = 0
 for data_key in pbar:
     trans = torch.from_numpy(amass_data[data_key]['trans']).float().to(device)
     N = trans.shape[0]
@@ -132,13 +133,15 @@ for data_key in pbar:
 
     root_trans_offset_dump[..., 2] -= fk_return.global_translation[..., 2].min().item() - 0.08
 
-    print(dof_pos_new.shape)
     data_dump[data_key]={
             "root_trans_offset": root_trans_offset_dump.squeeze().cpu().detach().numpy(),
             "pose_aa": pose_aa_stompy_new.squeeze().cpu().detach().numpy(),   
             "dof": dof_pos_new.squeeze().detach().cpu().numpy(), 
             "root_rot": sRot.from_rotvec(gt_root_rot.cpu().numpy()).as_quat(),
             }
+    
+    if count == 10:
+        joblib.dump(data_dump, "data/stompy/amass_train.pkl")
+    count += 1
 
-import ipdb; ipdb.set_trace()
 joblib.dump(data_dump, "data/stompy/amass_train.pkl")

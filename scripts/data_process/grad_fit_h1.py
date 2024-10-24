@@ -4,8 +4,9 @@ import sys
 import pdb
 import os.path as osp
 sys.path.append(os.getcwd())
+sys.path.append("/home/kasm-user/human2humanoid/poselib")
 
-from poselib.poselib.skeleton.skeleton3d import SkeletonTree, SkeletonMotion, SkeletonState
+from poselib.skeleton.skeleton3d import SkeletonTree, SkeletonMotion, SkeletonState
 from scipy.spatial.transform import Rotation as sRot
 import numpy as np
 import torch
@@ -57,11 +58,7 @@ h1_rotation_axis = torch.tensor([[
     [0, 1, 0], # r_elbow
 ]]).to(device)
 
-h1_joint_names = [ 'pelvis', 
-                   'left_hip_yaw_link', 'left_hip_roll_link','left_hip_pitch_link', 'left_knee_link', 'left_ankle_link',
-                   'right_hip_yaw_link', 'right_hip_roll_link', 'right_hip_pitch_link', 'right_knee_link', 'right_ankle_link',
-                   'torso_link', 'left_shoulder_pitch_link', 'left_shoulder_roll_link', 'left_shoulder_yaw_link', 'left_elbow_link', 
-                  'right_shoulder_pitch_link', 'right_shoulder_roll_link', 'right_shoulder_yaw_link', 'right_elbow_link']
+h1_joint_names = ['pelvis',  'left_hip_yaw_link',  'left_hip_roll_link',  'left_hip_pitch_link',  'left_knee_link',  'left_ankle_link',  'right_hip_yaw_link',  'right_hip_roll_link',      'right_hip_pitch_link',      'right_knee_link',  'right_ankle_link',  'torso_link',  'left_shoulder_pitch_link',  'left_shoulder_roll_link',  'left_shoulder_yaw_link',  'left_elbow_link',  'right_shoulder_pitch_link',  'right_shoulder_roll_link',  'right_shoulder_yaw_link',  'right_elbow_link']
 
 h1_joint_names_augment = h1_joint_names + ["left_hand_link", "right_hand_link"]
 h1_joint_pick = ['pelvis', "left_knee_link", "left_ankle_link",  'right_knee_link', 'right_ankle_link', "left_shoulder_roll_link", "left_elbow_link", "left_hand_link", "right_shoulder_roll_link", "right_elbow_link", "right_hand_link",]
@@ -72,8 +69,9 @@ smpl_joint_pick_idx = [SMPL_BONE_ORDER_NAMES.index(j) for j in smpl_joint_pick]
 smpl_parser_n = SMPL_Parser(model_path="data/smpl", gender="neutral")
 smpl_parser_n.to(device)
 
-amass_data = joblib.load('amass_copycat_take6_train.pkl') # From PHC
-shape_new = joblib.load("data/h1/shape_optimized_v1.pkl").to(device)
+amass_data = joblib.load('/home/kasm-user/PHC/sample_data/amass_copycat_take6_train.pkl') # From PHC
+shape_new, scale = joblib.load("data/h1/shape_optimized_v1.pkl")
+shape_new = shape_new.to(device)
 
 
 
@@ -105,7 +103,6 @@ for data_key in pbar:
         verts, joints = smpl_parser_n.get_joints_verts(pose_aa_walk, shape_new, trans)
         pose_aa_h1_new = torch.cat([gt_root_rot[None, :, None], h1_rotation_axis * dof_pos_new, torch.zeros((1, N, 2, 3)).to(device)], axis = 2).to(device)
         fk_return = h1_fk.fk_batch(pose_aa_h1_new, root_trans_offset[None, ])
-        
         diff = fk_return['global_translation'][:, :, h1_joint_pick_idx] - joints[:, smpl_joint_pick_idx]
         loss_g = diff.norm(dim = -1).mean() 
         loss = loss_g
@@ -135,5 +132,5 @@ for data_key in pbar:
             "root_rot": sRot.from_rotvec(gt_root_rot.cpu().numpy()).as_quat(),
             }
 
-import ipdb; ipdb.set_trace()
-joblib.load("data/h1/amass_test.pkl")
+# import ipdb; ipdb.set_trace()
+# joblib.dump(data_dump, "data/h1/amass_train.pkl")
