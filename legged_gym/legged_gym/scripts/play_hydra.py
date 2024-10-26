@@ -123,7 +123,7 @@ def play(cfg_hydra: DictConfig) -> None:
         from legged_gym.utils import key_response_fn
 
     # prepare environment
-    
+    print("Here")
     env, _ = task_registry.make_env_hydra(name=cfg_hydra.task, hydra_cfg=cfg_hydra, env_cfg=env_cfg)
 
     logger = Logger(env.dt)

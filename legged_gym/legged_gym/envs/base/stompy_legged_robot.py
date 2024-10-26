@@ -390,8 +390,6 @@ class StompyLeggedRobot(BaseTask):
         """ Check if environments need to be reset
         """
         self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
-
-        
         # Termination for knee distance too close
         if self.cfg.asset.terminate_by_knee_distance and self.knee_distance.shape:
             # print("terminate_by knee_distance")
@@ -436,7 +434,7 @@ class StompyLeggedRobot(BaseTask):
                 
                 if self.cfg.asset.local_upper_reward:
                     diff =  ref_body_pos[:, [0]] - self._rigid_body_pos[:, [0]]
-                    ref_body_pos[:, 9:] -= diff
+                    ref_body_pos[:, self.upper_body_indices] -= diff
                              
 
                 if self.cfg.env.test or self.cfg.env.im_eval:
@@ -661,7 +659,7 @@ class StompyLeggedRobot(BaseTask):
             if self.cfg.asset.local_upper_reward:
                 ref_body_pos_extend = ref_body_pos_extend.clone()
                 diff =  ref_body_pos_extend[:, [0]] - self._rigid_body_pos[:, [0]]
-                ref_body_pos_extend[:, 11:] -= diff
+                ref_body_pos_extend[:, self.upper_body_indices] -= diff
             
             self.marker_coords[:] = ref_body_pos_extend.reshape(B, -1, 3)
             
@@ -1937,8 +1935,8 @@ class StompyLeggedRobot(BaseTask):
             for i in range(len(props)):
                 self.dof_pos_limits[i, 0] = props["lower"][i].item()
                 self.dof_pos_limits[i, 1] = props["upper"][i].item()
-                self.dof_vel_limits[i] = props["velocity"][i].item()
-                self.torque_limits[i] = props["effort"][i].item()
+                self.dof_vel_limits[i] = 2*props["velocity"][i].item()
+                self.torque_limits[i] = 2*props["effort"][i].item()
                 # soft limits
                 m = (self.dof_pos_limits[i, 0] + self.dof_pos_limits[i, 1]) / 2
                 r = self.dof_pos_limits[i, 1] - self.dof_pos_limits[i, 0]
@@ -2820,7 +2818,6 @@ class StompyLeggedRobot(BaseTask):
         self.extras = {}
         self.noise_scale_vec = self._get_noise_scale_vec(self.cfg)
         self.gravity_vec = to_torch(get_axis_params(-1., self.up_axis_idx), device=self.device).repeat((self.num_envs, 1))
-        import pdb; pdb.set_trace()
         self.forward_vec = to_torch([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
         self.torques = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.p_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
@@ -3065,7 +3062,6 @@ class StompyLeggedRobot(BaseTask):
         self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(feet_names)):
             self.feet_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], feet_names[i])
-
         self.penalised_contact_indices = torch.zeros(len(penalized_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(penalized_contact_names)):
             self.penalised_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], penalized_contact_names[i])
@@ -3136,19 +3132,19 @@ class StompyLeggedRobot(BaseTask):
         
         self.skeleton_trees = [sk_tree] * self.num_envs
         if self.cfg.env.test:
-            self._motion_lib.load_motions(skeleton_trees=self.skeleton_trees, gender_betas=[torch.zeros(17)] * self.num_envs, limb_weights=[np.zeros(10)] * self.num_envs, random_sample=False)
+            self._motion_lib.load_motions(skeleton_trees=self.skeleton_trees, gender_betas=[torch.zeros(18)] * self.num_envs, limb_weights=[np.zeros(10)] * self.num_envs, random_sample=False)
         else:
-            self._motion_lib.load_motions(skeleton_trees=self.skeleton_trees, gender_betas=[torch.zeros(17)] * self.num_envs, limb_weights=[np.zeros(10)] * self.num_envs, random_sample=True)
+            self._motion_lib.load_motions(skeleton_trees=self.skeleton_trees, gender_betas=[torch.zeros(18)] * self.num_envs, limb_weights=[np.zeros(10)] * self.num_envs, random_sample=True)
         self.motion_dt = self._motion_lib._motion_dt
 
     def resample_motion(self):
-        self._motion_lib.load_motions(skeleton_trees=self.skeleton_trees, gender_betas=[torch.zeros(17)] * self.num_envs, limb_weights=[np.zeros(10)] * self.num_envs, random_sample=True)
+        self._motion_lib.load_motions(skeleton_trees=self.skeleton_trees, gender_betas=[torch.zeros(18)] * self.num_envs, limb_weights=[np.zeros(10)] * self.num_envs, random_sample=True)
         env_ids = torch.arange(self.num_envs).to(self.device)
         self.reset_idx(env_ids)
 
     def forward_motion_samples(self):
         self.start_idx += self.num_envs
-        self._motion_lib.load_motions(skeleton_trees=self.skeleton_trees, gender_betas=[torch.zeros(17)] * self.num_envs, limb_weights=[np.zeros(10)] * self.num_envs, random_sample=False, start_idx=self.start_idx)
+        self._motion_lib.load_motions(skeleton_trees=self.skeleton_trees, gender_betas=[torch.zeros(18)] * self.num_envs, limb_weights=[np.zeros(10)] * self.num_envs, random_sample=False, start_idx=self.start_idx)
         env_ids = torch.arange(self.num_envs).to(self.device)
         self.reset_idx(env_ids)
 
@@ -3264,8 +3260,8 @@ class StompyLeggedRobot(BaseTask):
     
     @property
     def knee_distance(self):
-        left_knee_pos = self._get_rigid_body_pos("left_knee_link")
-        right_knee_pos = self._get_rigid_body_pos("right_knee_link")
+        left_knee_pos = self._get_rigid_body_pos("L_thigh")
+        right_knee_pos = self._get_rigid_body_pos("R_thigh")
         # print(f"left knee pos: {left_knee_pos}")
         dist_knee = torch.norm(left_knee_pos - right_knee_pos, dim=-1, keepdim=True)
         # print("dist knee shape", dist_knee.shape)
@@ -3273,8 +3269,8 @@ class StompyLeggedRobot(BaseTask):
   
     @property
     def feet_distance(self):
-        left_foot_pos = self._get_rigid_body_pos("left_ankle_link")
-        right_foot_pos = self._get_rigid_body_pos("right_ankle_link")
+        left_foot_pos = self._get_rigid_body_pos("L_foot")
+        right_foot_pos = self._get_rigid_body_pos("R_foot")
         dist_feet = torch.norm(left_foot_pos - right_foot_pos, dim=-1, keepdim=True)
         return dist_feet
     
@@ -3430,11 +3426,11 @@ class StompyLeggedRobot(BaseTask):
     
     def _reward_lower_action_rate(self):
         # Penalize changes in actions
-        return torch.sum(torch.square(self.last_actions[:, :10] - self.actions[:, :10]), dim=1)
+        return torch.sum(torch.square(self.last_actions[:, self.lower_body_indices] - self.actions[:, self.lower_body_indices]), dim=1)
     
     def _reward_upper_action_rate(self):
         # Penalize changes in actions
-        return torch.sum(torch.square(self.last_actions[:, 10:] - self.actions[:, 10:]), dim=1)
+        return torch.sum(torch.square(self.last_actions[:, self.upper_body_indices] - self.actions[:, self.upper_body_indices]), dim=1)
         
 
     def _reward_collision(self):
@@ -3475,7 +3471,7 @@ class StompyLeggedRobot(BaseTask):
         return torch.exp(-ang_vel_error/self.cfg.rewards.tracking_sigma)
     
     def _reward_freeze_upper_body(self):
-        return torch.mean(torch.square(self.dof_pos[:, 9:] - self.default_dof_pos[:, 9:]), dim=1)
+        return torch.mean(torch.square(self.dof_pos[:, self.upper_body_indices] - self.default_dof_pos[:, self.upper_body_indices]), dim=1)
         
     def _reward_tracking_dof_vel(self):
         # Tracking of dof velocity commands
@@ -3493,7 +3489,7 @@ class StompyLeggedRobot(BaseTask):
         
         
         diff_dof_pos = ref_dof_pos - dof_pos
-        diff_dof_pos = diff_dof_pos[:, :10] # lower, not including torso
+        diff_dof_pos = diff_dof_pos[:, self.lower_body_indices] # lower, not including torso
         diff_dof_pos_dist = torch.mean(torch.square(diff_dof_pos), dim=1)
         r_dof_pos = torch.exp(-diff_dof_pos_dist / self.cfg.rewards.teleop_joint_pos_sigma)
         return r_dof_pos
@@ -3509,7 +3505,7 @@ class StompyLeggedRobot(BaseTask):
         
         
         diff_dof_pos = ref_dof_pos - dof_pos
-        diff_dof_pos = diff_dof_pos[:, 9:] # upper
+        diff_dof_pos = diff_dof_pos[:, self.upper_body_indices] # upper
 
         diff_dof_pos_dist = torch.mean(torch.square(diff_dof_pos), dim=1)
         r_dof_pos = torch.exp(-diff_dof_pos_dist / self.cfg.rewards.teleop_joint_pos_sigma)
@@ -3517,7 +3513,6 @@ class StompyLeggedRobot(BaseTask):
     
     def _reward_teleop_selected_joint_position(self):
         dof_pos = self.dof_pos
-        
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
         # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
@@ -3546,7 +3541,7 @@ class StompyLeggedRobot(BaseTask):
         ref_dof_vel = motion_res['dof_vel']
         
         diff_dof_vel = ref_dof_vel - dof_vel
-        diff_dof_vel = diff_dof_vel[:, :9] # lower, not including torso
+        diff_dof_vel = diff_dof_vel[:, self.lower_body_indices] # lower, not including torso
         diff_dof_vel_dist = torch.mean(torch.square(diff_dof_vel), dim=1)
         r_dof_vel = torch.exp(-diff_dof_vel_dist / self.cfg.rewards.teleop_joint_vel_sigma)
         return r_dof_vel
@@ -3561,7 +3556,7 @@ class StompyLeggedRobot(BaseTask):
         ref_dof_vel = motion_res['dof_vel']
         
         diff_dof_vel = ref_dof_vel - dof_vel
-        diff_dof_vel = diff_dof_vel[:, 9:] # upper
+        diff_dof_vel = diff_dof_vel[:, self.upper_body_indices] # upper
         diff_dof_vel_dist = torch.mean(torch.square(diff_dof_vel), dim=1)
         r_dof_vel = torch.exp(-diff_dof_vel_dist / self.cfg.rewards.teleop_joint_vel_sigma)
         return r_dof_vel
@@ -3655,14 +3650,14 @@ class StompyLeggedRobot(BaseTask):
         
         if self.cfg.asset.local_upper_reward:
             diff =  ref_body_pos_extend[:, [0]] - body_pos[:, [0]]
-            ref_body_pos_extend[:, 10:] -= diff
+            ref_body_pos_extend[:, slf.upper_body_indices] -= diff
         
         extend_curr_pos = torch_utils.my_quat_rotate(body_rot[:, self.extend_body_parent_ids].reshape(-1, 4), self.extend_body_pos[:, ].reshape(-1, 3)).view(self.num_envs, -1, 3) + body_pos[:, self.extend_body_parent_ids]
         body_pos_extend = torch.cat([body_pos, extend_curr_pos], dim=1)
         
         diff_global_body_pos = ref_body_pos_extend - body_pos_extend
-        diff_global_body_pos_lower = diff_global_body_pos[:, :10]
-        diff_global_body_pos_upper = diff_global_body_pos[:, 10:]
+        diff_global_body_pos_lower = diff_global_body_pos[:, self.lower_body_indices]
+        diff_global_body_pos_upper = diff_global_body_pos[:, self.upper_body_indices]
         diff_body_pos_dist_lower = (diff_global_body_pos_lower**2).mean(dim=-1).mean(dim=-1)
         diff_body_pos_dist_upper = (diff_global_body_pos_upper**2).mean(dim=-1).mean(dim=-1)
         
@@ -3689,13 +3684,13 @@ class StompyLeggedRobot(BaseTask):
         
         if self.cfg.asset.local_upper_reward:
             diff =  ref_body_pos_extend[:, [0]] - body_pos[:, [0]]
-            ref_body_pos_extend[:, 10:] -= diff
+            ref_body_pos_extend[:, self.upper_body_indices] -= diff
         
         extend_curr_pos = torch_utils.my_quat_rotate(body_rot[:, self.extend_body_parent_ids].reshape(-1, 4), self.extend_body_pos[:, ].reshape(-1, 3)).view(self.num_envs, -1, 3) + body_pos[:, self.extend_body_parent_ids]
         body_pos_extend = torch.cat([body_pos, extend_curr_pos], dim=1)
         
         diff_global_body_pos = ref_body_pos_extend - body_pos_extend
-        diff_global_body_pos_lower = diff_global_body_pos[:, :10]
+        diff_global_body_pos_lower = diff_global_body_pos[:, self.lower_body_indices]
         diff_body_pos_dist_lower = (diff_global_body_pos_lower**2).mean(dim=-1).mean(dim=-1)
         
         diff_body_pos_dist_lower = diff_body_pos_dist_lower
@@ -3718,13 +3713,13 @@ class StompyLeggedRobot(BaseTask):
         
         if self.cfg.asset.local_upper_reward:
             diff =  ref_body_pos_extend[:, [0]] - body_pos[:, [0]]
-            ref_body_pos_extend[:, 10:] -= diff
+            ref_body_pos_extend[:, self.upper_body_indices] -= diff
         
         extend_curr_pos = torch_utils.my_quat_rotate(body_rot[:, self.extend_body_parent_ids].reshape(-1, 4), self.extend_body_pos[:, ].reshape(-1, 3)).view(self.num_envs, -1, 3) + body_pos[:, self.extend_body_parent_ids]
         body_pos_extend = torch.cat([body_pos, extend_curr_pos], dim=1)
         
         diff_global_body_pos = ref_body_pos_extend - body_pos_extend
-        diff_global_body_pos_upper = diff_global_body_pos[:, 10:]
+        diff_global_body_pos_upper = diff_global_body_pos[:, self.upper_body_indices]
         diff_body_pos_dist_upper = (diff_global_body_pos_upper**2).mean(dim=-1).mean(dim=-1)
         
         diff_body_pos_dist_upper = diff_body_pos_dist_upper
@@ -3747,13 +3742,13 @@ class StompyLeggedRobot(BaseTask):
         
         if self.cfg.asset.local_upper_reward:
             diff =  ref_body_pos_extend[:, [0]] - body_pos[:, [0]]
-            ref_body_pos_extend[:, 10:] -= diff
+            ref_body_pos_extend[:, self.upper_body_indices] -= diff
         
         extend_curr_pos = torch_utils.my_quat_rotate(body_rot[:, self.extend_body_parent_ids].reshape(-1, 4), self.extend_body_pos[:, ].reshape(-1, 3)).view(self.num_envs, -1, 3) + body_pos[:, self.extend_body_parent_ids]
         body_pos_extend = torch.cat([body_pos, extend_curr_pos], dim=1)
         
         diff_global_body_pos = ref_body_pos_extend - body_pos_extend
-        diff_global_body_pos_upper = diff_global_body_pos[:, 10:]
+        diff_global_body_pos_upper = diff_global_body_pos[:, self.upper_body_indices]
         diff_body_pos_dist_upper = (diff_global_body_pos_upper**2).mean(dim=-1).mean(dim=-1)
         
         diff_body_pos_dist_upper = diff_body_pos_dist_upper
@@ -3838,7 +3833,7 @@ class StompyLeggedRobot(BaseTask):
 
         diff_global_body_rot = torch_utils.quat_mul(ref_body_rot, torch_utils.quat_conjugate(body_rot))
         diff_global_body_angle = torch_utils.quat_to_angle_axis(diff_global_body_rot)[0]
-        diff_global_body_angle = diff_global_body_angle[:, :10] # lower
+        diff_global_body_angle = diff_global_body_angle[:, self.lower_body_indices] # lower
         diff_global_body_angle_dist = (diff_global_body_angle**2).mean(dim=-1)
         r_body_rot = torch.exp(-diff_global_body_angle_dist / self.cfg.rewards.teleop_body_rot_sigma)
         return r_body_rot
@@ -3854,7 +3849,7 @@ class StompyLeggedRobot(BaseTask):
         ref_body_rot = motion_res['rb_rot']
         diff_global_body_rot = torch_utils.quat_mul(ref_body_rot, torch_utils.quat_conjugate(body_rot))
         diff_global_body_angle = torch_utils.quat_to_angle_axis(diff_global_body_rot)[0]
-        diff_global_body_angle = diff_global_body_angle[:, 10:] # upper
+        diff_global_body_angle = diff_global_body_angle[:, self.upper_body_indices] # upper
         diff_global_body_angle_dist = (diff_global_body_angle**2).mean(dim=-1)
         r_body_rot = torch.exp(-diff_global_body_angle_dist / self.cfg.rewards.teleop_body_rot_sigma)
         return r_body_rot
@@ -3897,7 +3892,7 @@ class StompyLeggedRobot(BaseTask):
         ref_body_vel = motion_res['body_vel']
 
         diff_global_vel = ref_body_vel - body_vel
-        diff_global_vel = diff_global_vel[:, :10]
+        diff_global_vel = diff_global_vel[:, self.lower_body_indices]
         diff_global_vel_dist = (diff_global_vel**2).mean(dim=-1).mean(dim=-1)
         
         r_vel = torch.exp(-diff_global_vel_dist / self.cfg.rewards.teleop_body_vel_sigma)
@@ -3914,7 +3909,7 @@ class StompyLeggedRobot(BaseTask):
         ref_body_vel = motion_res['body_vel']
 
         diff_global_vel = ref_body_vel - body_vel
-        diff_global_vel = diff_global_vel[:, 10:]
+        diff_global_vel = diff_global_vel[:, self.upper_body_indices]
         diff_global_vel_dist = (diff_global_vel**2).mean(dim=-1).mean(dim=-1)
         
         r_vel = torch.exp(-diff_global_vel_dist / self.cfg.rewards.teleop_body_vel_sigma)
@@ -3959,7 +3954,7 @@ class StompyLeggedRobot(BaseTask):
         ref_body_ang_vel = motion_res['body_ang_vel']
 
         diff_global_ang_vel = ref_body_ang_vel - body_ang_vel
-        diff_global_ang_vel = diff_global_ang_vel[:, :10] # lower
+        diff_global_ang_vel = diff_global_ang_vel[:, self.lower_body_indices] # lower
         diff_global_ang_vel_dist = (diff_global_ang_vel**2).mean(dim=-1).mean(dim=-1)
         r_ang_vel = torch.exp(-diff_global_ang_vel_dist / self.cfg.rewards.teleop_body_ang_vel_sigma)
         return r_ang_vel
@@ -3977,7 +3972,7 @@ class StompyLeggedRobot(BaseTask):
 
 
         diff_global_ang_vel = ref_body_ang_vel - body_ang_vel
-        diff_global_ang_vel = diff_global_ang_vel[:, 10:] # upper
+        diff_global_ang_vel = diff_global_ang_vel[:, self.upper_body_indices] # upper
         diff_global_ang_vel_dist = (diff_global_ang_vel**2).mean(dim=-1).mean(dim=-1)
         r_ang_vel = torch.exp(-diff_global_ang_vel_dist / self.cfg.rewards.teleop_body_ang_vel_sigma)
         return r_ang_vel
@@ -4074,7 +4069,7 @@ class StompyLeggedRobot(BaseTask):
     
     def _reward_freeze_arms(self):
         ## hardcode zc, soft on torso
-        return torch.sum(torch.square(self.dof_pos[:, 10:]-self.default_dof_pos[:, 10:]), dim=1) + 0.1*torch.abs(self.dof_pos[:, 9] - self.default_dof_pos[:, 9])
+        return torch.sum(torch.square(self.dof_pos[:, self.upper_body_indices]-self.default_dof_pos[:, self.upper_body_indices]), dim=1) + 0.1*torch.abs(self.dof_pos[:, 9] - self.default_dof_pos[:, 9])
     
     def render(self, sync_frame_time=False):
         # if self.viewer:
