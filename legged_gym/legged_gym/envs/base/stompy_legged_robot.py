@@ -382,7 +382,7 @@ class StompyLeggedRobot(BaseTask):
     def begin_seq_motion_samples(self):
         # For evaluation
         self.start_idx = 0
-        self._motion_lib.load_motions(skeleton_trees=self.skeleton_trees, gender_betas=[torch.zeros(17)] * self.num_envs, limb_weights=[np.zeros(10)] * self.num_envs, random_sample=False, start_idx=self.start_idx)
+        self._motion_lib.load_motions(skeleton_trees=self.skeleton_trees, gender_betas=[torch.zeros(18)] * self.num_envs, limb_weights=[np.zeros(10)] * self.num_envs, random_sample=False, start_idx=self.start_idx)
         self.reset()            
         
             
@@ -392,16 +392,11 @@ class StompyLeggedRobot(BaseTask):
         self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
         # Termination for knee distance too close
         if self.cfg.asset.terminate_by_knee_distance and self.knee_distance.shape:
-            # print("terminate_by knee_distance")
             self.reset_buf |= torch.any(self.knee_distance < self.cfg.asset.termination_scales.min_knee_distance, dim=1)
-            #print("Terminated by knee distance: ", torch.sum(self.reset_buf).item())
                     
         # Termination for velocities
         if self.cfg.asset.terminate_by_lin_vel:
-            # print("terminate_by lin_vel")
             self.reset_buf |= torch.any(torch.norm(self.base_lin_vel, dim=-1, keepdim=True) > self.cfg.asset.termination_scales.base_vel, dim=1)
-            #print("Terminated by lin vel: ", torch.sum(self.reset_buf).item())
-        # print(self.reset_buf)
 
         # Termination for angular velocities
         if self.cfg.asset.terminate_by_ang_vel:
@@ -456,9 +451,6 @@ class StompyLeggedRobot(BaseTask):
             self.time_out_buf = self.episode_length_buf > self.max_episode_length # no terminal reward for time-outs
         
         self.reset_buf |= self.time_out_buf
-        # if self.cfg.motion.teleop: 
-        #     is_recovery = self._recovery_counter > 0 # give pushed robot time to recover
-        #     self.reset_buf[is_recovery] = 0
      
 
     def reset_idx(self, env_ids):
@@ -471,8 +463,6 @@ class StompyLeggedRobot(BaseTask):
         Args:
             env_ids (list[int]): List of environment ids which must be reset
         """
-        # if self.cfg.env.test and len(env_ids) > 0 and not self.cfg.env.im_eval:
-            # print("Terminated", self.episode_length_buf[env_ids].numpy())
         
         # reset buffers
         self.last_actions[env_ids] = 0.
@@ -528,10 +518,6 @@ class StompyLeggedRobot(BaseTask):
         
         if self.cfg.motion.teleop:
             self.base_pos_init[env_ids] = self.root_states[env_ids, :3]
-
-            
-            
-        
         self.extras['cost'] = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
         
         # fill extras
@@ -578,15 +564,11 @@ class StompyLeggedRobot(BaseTask):
                 if name != "teleop_body_position_extend" or name!= "teleop_body_position_extend_upper_0dot5sigma" or name!="teleop_body_position_extend_upper" or name!="teleop_body_position_vr_3keypoints":
                     rew_ignore = ~self.prioritize_closing # prioritize_closing = 1 if distance > close_distance, then ignore dof reward
                     rew *= rew_ignore
-
             
             self.rew_buf += rew
             self.episode_sums[name] += rew
         if self.cfg.rewards.only_positive_rewards:
             self.rew_buf[:] = torch.clip(self.rew_buf[:], min=0.)
-        
-
-        
 
         if "termination" in self.reward_scales:
             rew = self._reward_termination() * self.reward_scales["termination"]
@@ -664,807 +646,7 @@ class StompyLeggedRobot(BaseTask):
             self.marker_coords[:] = ref_body_pos_extend.reshape(B, -1, 3)
             
         if self.cfg.motion.teleop:
-            if self.cfg.motion.teleop_obs_version == 'v1':
-                with torch.no_grad():
-                    body_pos = self._rigid_body_pos
-                    body_rot = self._rigid_body_rot
-                    body_vel = self._rigid_body_vel
-                    body_ang_vel = self._rigid_body_ang_vel
-                    dof_pos = self.dof_pos
-                    dof_vel = self.dof_vel
-                    
-                    root_pos = body_pos[..., 0, :]
-                    root_rot = body_rot[..., 0, :]
-                    root_vel = body_vel[:, 0, :]
-                    root_ang_vel = body_ang_vel[:, 0, :]
-                    ref_root_vel = ref_body_vel_subset[:, 0, :]
-                    ref_root_ang_vel = ref_body_ang_vel[:, 0, :]
-                    self_obs = compute_humanoid_observations(body_pos, body_rot, root_vel, root_ang_vel, dof_pos, dof_vel, True, True) # 122
-                    task_obs = compute_imitation_observations(root_pos, root_rot, body_pos, body_rot, root_vel, root_ang_vel, dof_pos, dof_vel, ref_body_pos, ref_body_rot, ref_root_vel, ref_root_ang_vel,  ref_joint_pos, ref_joint_vel, 1)
-                    obs = torch.cat([self_obs, task_obs, self.projected_gravity, self.actions], dim = -1)
-            elif self.cfg.motion.teleop_obs_version == 'v-min':
-                with torch.no_grad():
-                    
-                    # robot
-                    dof_pos = self.dof_pos
-                    dof_vel = self.dof_vel
-                    base_vel = self.base_lin_vel
-                    base_ang_vel = self.base_ang_vel
-                    base_gravity = self.projected_gravity
-                    delta_root_pos = ref_body_pos[:, 0, :] - self.base_pos
-                    delta_base_pos = quat_rotate_inverse(self.base_quat, delta_root_pos)[:, :2]
-                    
-                    forward = quat_apply(self.base_quat, self.forward_vec)
-                    heading = torch.atan2(forward[:, 1], forward[:, 0])
-                    
-                    ref_forward = quat_apply(ref_body_rot[:, 0, :], self.forward_vec)
-                    ref_heading = torch.atan2(ref_forward[:, 1], ref_forward[:, 0])
-                    delta_heading = wrap_to_pi(ref_heading - heading).unsqueeze(1)
-                    
-                    
-                    
-                    # ref
-                    ref_root_rot = ref_body_rot[:, 0, :]
-                    ref_root_vel = ref_body_vel_subset[:, 0, :]
-                    ref_root_ang_vel = ref_body_ang_vel[:, 0, :]
-                    
-                    ref_dof_pos = ref_joint_pos
-                    ref_dof_vel = ref_joint_vel
-                    ref_base_vel = quat_rotate_inverse(ref_root_rot, ref_root_vel)
-                    ref_base_ang_vel = quat_rotate_inverse(ref_root_rot, ref_root_ang_vel)
-                    ref_base_gravity = quat_rotate_inverse(ref_root_rot, self.gravity_vec)
-                    
- 
-                    obs = torch.cat([dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity, delta_base_pos, delta_heading,
-                                              ref_dof_pos, ref_dof_vel, ref_base_vel, ref_base_ang_vel,ref_base_gravity,
-                                              self.actions], dim = -1)
-            elif self.cfg.motion.teleop_obs_version == 'v-min2':
-                with torch.no_grad():
-                    # robot
-                    dof_pos = self.dof_pos
-                    dof_vel = self.dof_vel
-                    base_vel = self.base_lin_vel
-                    base_ang_vel = self.base_ang_vel
-                    base_gravity = self.projected_gravity
-                    delta_root_pos = ref_body_pos[:, 0, :] - self.base_pos
-                    delta_base_pos = quat_rotate_inverse(self.base_quat, delta_root_pos)[:, :2]
-                    
-                    forward = quat_apply(self.base_quat, self.forward_vec)
-                    heading = torch.atan2(forward[:, 1], forward[:, 0])
-                    
-                    ref_forward = quat_apply(ref_body_rot[:, 0, :], self.forward_vec)
-                    ref_heading = torch.atan2(ref_forward[:, 1], ref_forward[:, 0])
-                    delta_heading = wrap_to_pi(ref_heading - heading).unsqueeze(1)
-                    
-                    
-                    
-                    # ref
-                    ref_root_rot = ref_body_rot[:, 0, :]
-                    ref_root_vel = ref_body_vel_subset[:, 0, :]
-                    ref_root_ang_vel = ref_body_ang_vel[:, 0, :]
-                    
-                    ref_dof_pos = ref_joint_pos
-                    # ref_dof_vel = ref_joint_vel
-                    # ref_base_vel = quat_rotate_inverse(ref_root_rot, ref_root_vel)
-                    # ref_base_ang_vel = quat_rotate_inverse(ref_root_rot, ref_root_ang_vel)
-                    # ref_base_gravity = quat_rotate_inverse(ref_root_rot, self.gravity_vec)
-                    
- 
-                    obs = torch.cat([dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity, delta_base_pos, delta_heading,
-                                              ref_dof_pos, self.actions], dim = -1)
-                    
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop':
-                with torch.no_grad():
-                    
-                    # robot
-                    dof_pos = self.dof_pos
-                    dof_vel = self.dof_vel
-                    base_vel = self.base_lin_vel
-                    base_ang_vel = self.base_ang_vel
-                    base_gravity = self.projected_gravity
-
-                    delta_root_pos = ref_body_pos[:, 0, :] - self.base_pos
-                    delta_base_pos = quat_rotate_inverse(self.base_quat, delta_root_pos)[:, :2]
-                    
-                    forward = quat_apply(self.base_quat, self.forward_vec)
-                    heading = torch.atan2(forward[:, 1], forward[:, 0])
-                    
-                    ref_forward = quat_apply(ref_body_rot[:, 0, :], self.forward_vec)
-                    ref_heading = torch.atan2(ref_forward[:, 1], ref_forward[:, 0])
-                    delta_heading = wrap_to_pi(ref_heading - heading).unsqueeze(1)
-                    
-                    
-                    
-                    # ref
-                    # ref_root_rot = ref_body_rot[:, 0, :]
-                    # ref_root_vel = ref_body_vel[:, 0, :]
-                    # ref_base_vel = quat_rotate_inverse(ref_root_rot, ref_root_vel)
-
-                    ########################### BEGIN: compute keypoint pos diff in robot base frame ###########################
-                    # ref_keypoint_pos_baseframe including 8 keypoints: handx2, elbowx2, shoulderx2, anklex2, 3dimx8keypoints = 24dim
-                    selected_keypoints_idx = [self._body_list.index(body_name) for body_name in self.cfg.motion.teleop_selected_keypoints_names]
-
-                    body_pos = self._rigid_body_pos
-                    body_rot = self._rigid_body_rot
-                    body_vel = self._rigid_body_vel
-                    body_ang_vel = self._rigid_body_ang_vel
-                    dof_pos = self.dof_pos
-                    dof_vel = self.dof_vel
-                    
-                    root_pos = body_pos[..., 0, :]
-                    root_rot = body_rot[..., 0, :]
-                    root_vel = body_vel[:, 0, :]
-                    root_ang_vel = body_ang_vel[:, 0, :]
-                    ref_root_vel = ref_body_vel_subset[:, 0, :]
-                    ref_root_ang_vel = ref_body_ang_vel[:, 0, :]
-                    
-                    task_obs = compute_imitation_observations_teleop(root_pos, root_rot, root_vel, body_pos[:, selected_keypoints_idx, :], ref_body_pos[:, selected_keypoints_idx, :],  1)
-
-                    ####################### END: compute keypoint pos diff in robot base frame ###########################
-                    obs = torch.cat([dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity, delta_base_pos, delta_heading, # 19dim + 19dim + 3dim + 3dim + 3dim + 2dim + 1dim
-                                             task_obs,  # 3xselected_dim = 18dim
-                                              self.actions], dim = -1) # 19dim
-                    
-            
-                    
-
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-clean':
-                with torch.no_grad():
-                    
-                    # robot
-                    dof_pos = self.dof_pos
-                    dof_vel = self.dof_vel
-                    base_vel = self.base_lin_vel
-                    base_ang_vel = self.base_ang_vel
-                    base_gravity = self.projected_gravity
-
-                    # ref
-                    # ref_root_rot = ref_body_rot[:, 0, :]
-                    # ref_root_vel = ref_body_vel[:, 0, :]
-                    # ref_base_vel = quat_rotate_inverse(ref_root_rot, ref_root_vel)
-
-                    ########################### BEGIN: compute keypoint pos diff in robot base frame ###########################
-                    # ref_keypoint_pos_baseframe including 8 keypoints: handx2, elbowx2, shoulderx2, anklex2, 3dimx8keypoints = 18dim
-                    selected_keypoints_idx = [self._body_list.index(body_name) for body_name in self.cfg.motion.teleop_selected_keypoints_names]
-
-                    body_pos = self._rigid_body_pos
-                    body_rot = self._rigid_body_rot
-                    body_vel = self._rigid_body_vel
-                    body_ang_vel = self._rigid_body_ang_vel
-                    dof_pos = self.dof_pos
-                    dof_vel = self.dof_vel
-                    
-                    root_pos = body_pos[..., 0, :]
-                    root_rot = body_rot[..., 0, :]
-                    root_vel = body_vel[:, 0, :]
-                    root_ang_vel = body_ang_vel[:, 0, :]
-                    ref_root_vel = ref_body_vel_subset[:, 0, :]
-                    ref_root_ang_vel = ref_body_ang_vel[:, 0, :]
-                    
-                    task_obs = compute_imitation_observations_teleop(root_pos, root_rot, root_vel, body_pos[:, selected_keypoints_idx, :], ref_body_pos[:, selected_keypoints_idx, :],  1)
-
-                    ####################### END: compute keypoint pos diff in robot base frame ###########################
-                    
-                    
-                    obs = torch.cat([dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity,  # 19dim + 19dim + 3dim + 3dim + 3dim 
-                                             task_obs,  # 3xselected_dim = 18dim
-                                              self.actions], dim = -1) # 19dim
-                    
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-superclean':
-                with torch.no_grad():
-                    
-                    # robot
-                    dof_pos = self.dof_pos
-                    dof_vel = self.dof_vel
-
-
-                    # ref
-                    # ref_root_rot = ref_body_rot[:, 0, :]
-                    # ref_root_vel = ref_body_vel[:, 0, :]
-                    # ref_base_vel = quat_rotate_inverse(ref_root_rot, ref_root_vel)
-
-                    ########################### BEGIN: compute keypoint pos diff in robot base frame ###########################
-                    # ref_keypoint_pos_baseframe including 8 keypoints: handx2, elbowx2, shoulderx2, anklex2, 3dimx8keypoints = 18dim
-                    selected_keypoints_idx = [self._body_list.index(body_name) for body_name in self.cfg.motion.teleop_selected_keypoints_names]
-
-                    body_pos = self._rigid_body_pos
-                    body_rot = self._rigid_body_rot
-                    body_vel = self._rigid_body_vel
-                    body_ang_vel = self._rigid_body_ang_vel
-                    dof_pos = self.dof_pos
-                    dof_vel = self.dof_vel
-                    
-                    root_pos = body_pos[..., 0, :]
-                    root_rot = body_rot[..., 0, :]
-                    root_vel = body_vel[:, 0, :]
-                    root_ang_vel = body_ang_vel[:, 0, :]
-                    ref_root_vel = ref_body_vel_subset[:, 0, :]
-                    ref_root_ang_vel = ref_body_ang_vel[:, 0, :]
-                    
-                    task_obs = compute_imitation_observations_teleop(root_pos, root_rot, root_vel, body_pos[:, selected_keypoints_idx, :], ref_body_pos[:, selected_keypoints_idx, :],  1)
-
-                    ####################### END: compute keypoint pos diff in robot base frame ###########################
-                    
-                    
-                    obs = torch.cat([dof_pos, dof_vel,   # 19dim + 19dim 
-                                             task_obs,  # 3xselected_dim = 18dim
-                                              self.actions], dim = -1) # 19dim
-                    
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-clean-nolastaction':
-                with torch.no_grad():
-                    
-                    # robot
-                    dof_pos = self.dof_pos
-                    dof_vel = self.dof_vel
-                    base_vel = self.base_lin_vel
-                    base_ang_vel = self.base_ang_vel
-                    base_gravity = self.projected_gravity
-                    # ref_root_rot = ref_body_rot[:, 0, :]
-                    # ref_root_vel = ref_body_vel[:, 0, :]
-                    # ref_base_vel = quat_rotate_inverse(ref_root_rot, ref_root_vel)
-
-                    ########################### BEGIN: compute keypoint pos diff in robot base frame ###########################
-                    # ref_keypoint_pos_baseframe including 8 keypoints:  elbowx2, shoulderx2, anklex2, 3dimx8keypoints = 18dim
-                    selected_keypoints_idx = [self._body_list.index(body_name) for body_name in self.cfg.motion.teleop_selected_keypoints_names]
-
-                    body_pos = self._rigid_body_pos
-                    body_rot = self._rigid_body_rot
-                    body_vel = self._rigid_body_vel
-                    body_ang_vel = self._rigid_body_ang_vel
-                    dof_pos = self.dof_pos
-                    dof_vel = self.dof_vel
-                    
-                    root_pos = body_pos[..., 0, :]
-                    root_rot = body_rot[..., 0, :]
-                    root_vel = body_vel[:, 0, :]
-                    root_ang_vel = body_ang_vel[:, 0, :]
-                    ref_root_vel = ref_body_vel_subset[:, 0, :]
-                    ref_root_ang_vel = ref_body_ang_vel[:, 0, :]
-                    
-                    task_obs = compute_imitation_observations_teleop(root_pos, root_rot, root_vel, body_pos[:, selected_keypoints_idx, :], ref_body_pos[:, selected_keypoints_idx, :],  1)
-
-                    ####################### END: compute keypoint pos diff in robot base frame ###########################
-                    
-                    
-                    obs = torch.cat([dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity,  # 19dim + 19dim + 3dim + 3dim + 3dim 
-                                             task_obs,  # 3xselected_dim = 18dim
-                                             ], dim = -1) 
-                    
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend':
-                
-                body_pos = self._rigid_body_pos
-                body_rot = self._rigid_body_rot
-                body_vel = self._rigid_body_vel
-                body_ang_vel = self._rigid_body_ang_vel
-                dof_pos = self.dof_pos
-                dof_vel = self.dof_vel
-                
-                extend_curr_pos = torch_utils.my_quat_rotate(body_rot[:, self.extend_body_parent_ids].reshape(-1, 4), self.extend_body_pos[:, ].reshape(-1, 3)).view(self.num_envs, -1, 3) + body_pos[:, self.extend_body_parent_ids]
-                body_pos_extend = torch.cat([body_pos, extend_curr_pos], dim=1)
-                
-                ref_rb_pos_subset = ref_body_pos_extend[:, self._track_bodies_extend_id]
-                ref_body_vel_subset = ref_body_vel_extend[:, self._track_bodies_extend_id]
-                
-                
-                # robot
-                dof_pos = self.dof_pos
-                dof_vel = self.dof_vel
-                base_vel = self.base_lin_vel
-                base_ang_vel = self.base_ang_vel
-                base_gravity = self.projected_gravity
-
-                ########################### BEGIN: compute keypoint pos diff in robot base frame ###########################
-                # ref_keypoint_pos_baseframe including 8 keypoints: handx2, elbowx2, shoulderx2, anklex2, 3dimx8keypoints = 18dim
-                root_pos = body_pos[..., 0, :]
-                root_rot = body_rot[..., 0, :]
-                root_vel = body_vel[:, 0, :]
-                root_ang_vel = body_ang_vel[:, 0, :]
-                ref_root_vel = ref_body_vel_subset[:, 0, :]
-                ref_root_ang_vel = ref_body_ang_vel[:, 0, :]
- 
-                task_obs = compute_imitation_observations_teleop(root_pos, root_rot, root_vel, body_pos_extend[:, self._track_bodies_extend_id, :], ref_rb_pos_subset,  1)
-                
-                ####################### END: compute keypoint pos diff in robot base frame ###########################
-                
-                
-                obs = torch.cat([dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity,  # 19dim + 19dim + 3dim + 3dim + 3dim 
-                                            task_obs,  # 3xselected_dim = 18dim
-                                            self.actions], dim = -1) # 19dim
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend-nolinvel':
-                
-                body_pos = self._rigid_body_pos
-                body_rot = self._rigid_body_rot
-                body_vel = self._rigid_body_vel
-                body_ang_vel = self._rigid_body_ang_vel
-                dof_pos = self.dof_pos
-                dof_vel = self.dof_vel
-                
-                extend_curr_pos = torch_utils.my_quat_rotate(body_rot[:, self.extend_body_parent_ids].reshape(-1, 4), self.extend_body_pos[:, ].reshape(-1, 3)).view(self.num_envs, -1, 3) + body_pos[:, self.extend_body_parent_ids]
-                body_pos_extend = torch.cat([body_pos, extend_curr_pos], dim=1)
-                
-                ref_rb_pos_subset = ref_body_pos_extend[:, self._track_bodies_extend_id]
-                ref_body_vel_subset = ref_body_vel_extend[:, self._track_bodies_extend_id]
-                
-                
-                # robot
-                dof_pos = self.dof_pos
-                dof_vel = self.dof_vel
-                base_vel = self.base_lin_vel
-                base_ang_vel = self.base_ang_vel
-                base_gravity = self.projected_gravity
-
-                ########################### BEGIN: compute keypoint pos diff in robot base frame ###########################
-                # ref_keypoint_pos_baseframe including 8 keypoints: handx2, elbowx2, shoulderx2, anklex2, 3dimx8keypoints = 18dim
-                root_pos = body_pos[..., 0, :]
-                root_rot = body_rot[..., 0, :]
-                root_vel = body_vel[:, 0, :]
-                root_ang_vel = body_ang_vel[:, 0, :]
-                ref_root_vel = ref_body_vel_subset[:, 0, :]
-                ref_root_ang_vel = ref_body_ang_vel[:, 0, :]
-                
-                task_obs = compute_imitation_observations_teleop(root_pos, root_rot, root_vel, body_pos_extend[:, self._track_bodies_extend_id, :], ref_rb_pos_subset,  1)
-                
-                ####################### END: compute keypoint pos diff in robot base frame ###########################
-                
-                
-                obs = torch.cat([dof_pos, dof_vel,  base_ang_vel, base_gravity,  # 19dim + 19dim  + 3dim + 3dim 
-                                            task_obs,  # 3xselected_dim = 24dim
-                                            self.actions], dim = -1) # 19dim
-            
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend-max':
-                body_pos = self._rigid_body_pos
-                body_rot = self._rigid_body_rot
-                body_vel = self._rigid_body_vel
-                body_ang_vel = self._rigid_body_ang_vel
-                dof_pos = self.dof_pos
-                dof_vel = self.dof_vel
-                
-                extend_curr_pos = torch_utils.my_quat_rotate(body_rot[:, self.extend_body_parent_ids].reshape(-1, 4), self.extend_body_pos[:, ].reshape(-1, 3)).view(self.num_envs, -1, 3) + body_pos[:, self.extend_body_parent_ids]
-                body_pos_extend = torch.cat([body_pos, extend_curr_pos], dim=1)
-                body_pos_subset = body_pos_extend[:, self._track_bodies_extend_id, :]
-                
-                
-                ref_rb_pos_subset = ref_body_pos_extend[:, self._track_bodies_extend_id]
-                ref_body_vel_subset = ref_body_vel_extend[:, self._track_bodies_extend_id]
-                
-                # robot
-                dof_pos = self.dof_pos
-                dof_vel = self.dof_vel
-                base_vel = self.base_lin_vel
-                base_ang_vel = self.base_ang_vel
-                base_gravity = self.projected_gravity
-
-                # ref_keypoint_pos_baseframe including 8 keypoints: handx2, elbowx2, shoulderx2, anklex2, 3dimx8keypoints = 18dim
-                root_pos = body_pos[..., 0, :]
-                root_rot = body_rot[..., 0, :]
-                root_vel = body_vel[:, 0, :]
-                root_ang_vel = body_ang_vel[:, 0, :]
-                ref_root_ang_vel = ref_body_ang_vel[:, 0, :]
-                
-                if self.cfg.asset.zero_out_far:
-                    close_distance = self.cfg.asset.close_distance    
-                    distance = torch.norm(root_pos - ref_body_pos_extend[..., 0, :], dim=-1)
-                    zeros_subset = distance > close_distance
-                    self.prioritize_closing = zeros_subset
-                    if self.cfg.asset.zero_out_far_change_obs:
-                        ref_rb_pos_subset[zeros_subset, 1:] = body_pos_subset[zeros_subset, 1:]
-                        ref_body_vel_subset[zeros_subset, :] = base_vel
-                        self.point_goal= distance
-                        far_distance = self.cfg.asset.far_distance  # does not seem to need this in particular...
-                        vector_zero_subset = distance > far_distance  # > 5 meters, it become just a direction
-                        ref_rb_pos_subset[vector_zero_subset, 0] = ((ref_rb_pos_subset[vector_zero_subset, 0] - body_pos_subset[vector_zero_subset, 0]) / distance[vector_zero_subset, None] * far_distance) + body_pos_subset[vector_zero_subset, 0]
-                        
-                    
-                # self_obs = compute_humanoid_observations(body_pos, body_rot, root_vel, root_ang_vel, dof_pos, dof_vel, True, False) # 222
-                task_obs = compute_imitation_observations_teleop_max(root_pos, root_rot, body_pos_subset, ref_rb_pos_subset, ref_body_vel_subset,  1, ref_episodic_offset = self.ref_episodic_offset)
-                obs = torch.cat([dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity,  # 19dim + 19dim + 3dim + 3dim + 3dim 
-                                            task_obs,  # 
-                                            self.actions], dim = -1) # 19dim
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend-max_no_vel':
-                body_pos = self._rigid_body_pos
-                body_rot = self._rigid_body_rot
-                body_vel = self._rigid_body_vel
-                body_ang_vel = self._rigid_body_ang_vel
-                dof_pos = self.dof_pos
-                dof_vel = self.dof_vel
-                
-                extend_curr_pos = torch_utils.my_quat_rotate(body_rot[:, self.extend_body_parent_ids].reshape(-1, 4), self.extend_body_pos[:, ].reshape(-1, 3)).view(self.num_envs, -1, 3) + body_pos[:, self.extend_body_parent_ids]
-                body_pos_extend = torch.cat([body_pos, extend_curr_pos], dim=1)
-                body_pos_subset = body_pos_extend[:, self._track_bodies_extend_id, :]
-                
-                
-                ref_rb_pos_subset = ref_body_pos_extend[:, self._track_bodies_extend_id]
-                ref_body_vel_subset = ref_body_vel_extend[:, self._track_bodies_extend_id]
-                
-                # robot
-                dof_pos = self.dof_pos
-                dof_vel = self.dof_vel
-                base_vel = self.base_lin_vel
-                base_ang_vel = self.base_ang_vel
-                base_gravity = self.projected_gravity
-
-                # ref_keypoint_pos_baseframe including 8 keypoints: handx2, elbowx2, shoulderx2, anklex2, 3dimx8keypoints = 18dim
-                root_pos = body_pos[..., 0, :]
-                root_rot = body_rot[..., 0, :]
-                root_vel = body_vel[:, 0, :]
-                root_ang_vel = body_ang_vel[:, 0, :]
-                ref_root_ang_vel = ref_body_ang_vel[:, 0, :]
-                
-                if self.cfg.asset.zero_out_far:
-                    close_distance = self.cfg.asset.close_distance    
-                    distance = torch.norm(root_pos - ref_body_pos_extend[..., 0, :], dim=-1)
-                    zeros_subset = distance > close_distance
-
-                    self.prioritize_closing = zeros_subset
-
-                    ref_rb_pos_subset[zeros_subset, 1:] = body_pos_subset[zeros_subset, 1:]
-                    ref_body_vel_subset[zeros_subset, :] = base_vel
-                    self.point_goal= distance
-                    far_distance = self.cfg.asset.far_distance  # does not seem to need this in particular...
-                    vector_zero_subset = distance > far_distance  # > 5 meters, it become just a direction
-                    ref_rb_pos_subset[vector_zero_subset, 0] = ((ref_rb_pos_subset[vector_zero_subset, 0] - body_pos_subset[vector_zero_subset, 0]) / distance[vector_zero_subset, None] * far_distance) + body_pos_subset[vector_zero_subset, 0]
-                    
-                    
-                # self_obs = compute_humanoid_observations(body_pos, body_rot, root_vel, root_ang_vel, dof_pos, dof_vel, True, False) # 222
-                task_obs = compute_imitation_observations_teleop_max(root_pos, root_rot, body_pos_subset, ref_rb_pos_subset, ref_body_vel_subset,  1, ref_episodic_offset = self.ref_episodic_offset, ref_vel_in_task_obs = False)
-                obs = torch.cat([dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity,  # 19dim + 19dim + 3dim + 3dim + 3dim 
-                                            task_obs,  # 
-                                            self.actions], dim = -1) # 19dim
-                if self.cfg.env.add_short_history:
-                    assert self.cfg.env.short_history_length > 0
-                    history_to_be_append = self.trajectories[:, 0:self.cfg.env.short_history_length*63]
-                    obs = torch.cat([dof_pos, dof_vel, base_ang_vel, base_gravity,  # 19dim + 19dim + 3dim + 3dim 
-                                                task_obs,  # 
-                                                self.actions,
-                                                history_to_be_append], dim = -1) # 19dim
-                
-                else:
-                    obs = torch.cat([dof_pos, dof_vel, base_ang_vel, base_gravity,  # 19dim + 19dim + 3dim + 3dim 
-                                                task_obs,  # 
-                                                self.actions], dim = -1) # 19dim
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend-vr-max':
-                body_pos = self._rigid_body_pos
-                body_rot = self._rigid_body_rot
-                body_vel = self._rigid_body_vel
-                body_ang_vel = self._rigid_body_ang_vel
-                dof_pos = self.dof_pos
-                dof_vel = self.dof_vel
-                
-                extend_curr_pos = torch_utils.my_quat_rotate(body_rot[:, self.extend_body_parent_ids].reshape(-1, 4), self.extend_body_pos[:, ].reshape(-1, 3)).view(self.num_envs, -1, 3) + body_pos[:, self.extend_body_parent_ids]
-                body_pos_extend = torch.cat([body_pos, extend_curr_pos], dim=1)
-                body_pos_subset = body_pos_extend[:, self._track_bodies_extend_id, :]
-                
-                
-                ref_rb_pos_subset = ref_body_pos_extend[:, self._track_bodies_extend_id]
-                ref_body_vel_subset = ref_body_vel_extend[:, self._track_bodies_extend_id]
-                
-                # robot
-                dof_pos = self.dof_pos
-                dof_vel = self.dof_vel
-                base_vel = self.base_lin_vel
-                base_ang_vel = self.base_ang_vel
-                base_gravity = self.projected_gravity
-
-                # ref_keypoint_pos_baseframe including 8 keypoints: handx2, elbowx2, shoulderx2, anklex2, 3dimx8keypoints = 18dim
-                root_pos = body_pos[..., 0, :]
-                root_rot = body_rot[..., 0, :]
-                root_vel = body_vel[:, 0, :]
-                root_ang_vel = body_ang_vel[:, 0, :]
-                ref_root_ang_vel = ref_body_ang_vel[:, 0, :]
-
-                if self.cfg.asset.clip_motion_goal:
-                    # import ipdb; ipdb.set_trace()
-                    ref_head = ref_rb_pos_subset[:, 2]
-                    body_xyz = self.root_states[:, :3]
-                    direction_to_body = body_xyz - ref_head
-                    xy_direction = direction_to_body[:,:2]
-                    distance = torch.norm(xy_direction, dim=1)
-                    # import ipdb; ipdb.set_trace()
-                    far = distance > self.cfg.asset.clip_motion_goal_distance
-                    direction_to_body_norm = F.normalize(direction_to_body[:,:2], p = 2, dim=1)
-                    # direction_to_body_norm = xy_direction / 
-                    ref_rb_pos_subset[far, 2, :2] = self.root_states[far, :2] - direction_to_body_norm[far] * self.cfg.asset.clip_motion_goal_distance
-                
-                if self.cfg.asset.zero_out_far: # ref_rb_pos_subset[0], ref_rb_pos_subset[1], head ref_rb_pos_subset[2]
-                    close_distance = self.cfg.asset.close_distance  
-                    distance = torch.norm(root_pos - ref_body_pos_extend[0::self.cfg.motion.num_traj_samples,0, :], dim=-1)
-                    zeros_subset = distance > close_distance
-
-                    self.prioritize_closing = zeros_subset
-                    if self.cfg.asset.zero_out_far_change_obs:
-                        
-                        if self.cfg.motion.future_tracks:
-                            n = self.cfg.motion.num_traj_samples
-                            # import ipdb; ipdb.set_trace()
-                            zeros_set_future = zeros_subset.repeat_interleave(n) # zeros_set_future[n * i: n * i + n] = zeros_subset
-                            # print(ref_rb_pos_subset[zeros_set_future, :2])
-                            body_pos = body_pos_subset[zeros_subset, :2] # two hands\
-                            ref_rb_pos_subset[zeros_set_future, :2] = body_pos.repeat_interleave(n,dim=0)
-                            # print(ref_rb_pos_subset[zeros_set_future, :2])
-                            root_vel_ = root_vel[zeros_subset].unsqueeze(1).repeat(1, 3, 1)
-                            ref_body_vel_subset[zeros_set_future, :] = root_vel_.repeat_interleave(n,dim=0)
-                            self.point_goal= distance
-                            far_distance = self.cfg.asset.far_distance  # does not seem to need this in particular...
-                            vector_zero_subset = distance > far_distance  # > 5 meters, it become just a direction
-                            vector_zero_subset_future = torch.zeros(n * len(vector_zero_subset), dtype=torch.bool)
-                            vector_zero_subset_future[::n] = vector_zero_subset # vector_zero_subset_future[n * i] = vector_zero_subset[i]
-                            vector_zero_subset_future2 = vector_zero_subset.repeat_interleave(n) # vector_zero_subset_future[n * i : n * i + n] = vector_zero_subset[i]
-                            dis_new = ((ref_rb_pos_subset[vector_zero_subset_future, 2] - body_pos_subset[vector_zero_subset, 2]) / distance[vector_zero_subset, None] * far_distance) + body_pos_subset[vector_zero_subset, 2]
-                            ref_rb_pos_subset[vector_zero_subset_future2, 2] = dis_new.repeat_interleave(n,dim=0)
-                        
-                        else:
-                            ref_rb_pos_subset[zeros_subset, :2] = body_pos_subset[zeros_subset, :2] # two hands\
-                            ref_body_vel_subset[zeros_subset, :] = root_vel[zeros_subset].unsqueeze(1).repeat(1, 3, 1)
-                            self.point_goal= distance
-                            far_distance = self.cfg.asset.far_distance  # does not seem to need this in particular...
-                            vector_zero_subset = distance > far_distance  # > 5 meters, it become just a direction
-                            ref_rb_pos_subset[vector_zero_subset, 2] = ((ref_rb_pos_subset[vector_zero_subset, 2] - body_pos_subset[vector_zero_subset, 2]) / distance[vector_zero_subset, None] * far_distance) + body_pos_subset[vector_zero_subset, 2]
-                        
-                
-                # self_obs = compute_humanoid_observations(body_pos, body_rot, root_vel, root_ang_vel, dof_pos, dof_vel, True, False) # 222
-                # import ipdb; ipdb.set_trace()
-                if self.cfg.motion.realtime_vr_keypoints:
-                    ref_rb_pos_subset = self.realtime_vr_keypoints_pos
-                    ref_body_vel_subset = self.realtime_vr_keypoints_vel
-                    assert self.cfg.motion.num_traj_samples == 1
-                
-                task_obs = compute_imitation_observations_teleop_max(root_pos, root_rot, body_pos_subset, ref_rb_pos_subset, ref_body_vel_subset,  self.cfg.motion.num_traj_samples , ref_episodic_offset = self.ref_episodic_offset)
-                
-
-                
-                # obs = torch.cat([dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity,  # 19dim + 19dim + 3dim + 3dim + 3dim 
-                #                             task_obs,  # 
-                #                             self.actions], dim = -1) # 19dim
-                if self.cfg.env.add_short_history:
-                    assert self.cfg.env.short_history_length > 0
-                    history_to_be_append = self.trajectories_with_linvel[:, 0:self.cfg.env.short_history_length*66]
-                    obs = torch.cat([dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity,  # 19dim + 19dim + 3dim + 3dim 
-                                                task_obs,  # 
-                                                self.actions,
-                                                history_to_be_append], dim = -1) # 19dim
-                
-                else:
-                    obs = torch.cat([dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity,  # 19dim + 19dim + 3dim + 3dim 
-                                                task_obs,  # 
-                                                self.actions], dim = -1) # 19dim
-                    
-
-                if self.cfg.use_velocity_estimation:
-                    self.ready_for_train_indices = self.episode_length_buf > 25
-                    current_obs_a = self.trajectories[self.ready_for_train_indices, 0]
-                    if current_obs_a.shape[0] > 0:
-                        estimate_velocity = self.velocity_estimator(self.trajectories[self.ready_for_train_indices])
-                        obs[self.ready_for_train_indices,38:41] = estimate_velocity
-
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend-vr-max-nolinvel':
-                body_pos = self._rigid_body_pos
-                body_rot = self._rigid_body_rot
-                body_vel = self._rigid_body_vel
-                body_ang_vel = self._rigid_body_ang_vel
-                dof_pos = self.dof_pos
-                dof_vel = self.dof_vel
-                
-                extend_curr_pos = torch_utils.my_quat_rotate(body_rot[:, self.extend_body_parent_ids].reshape(-1, 4), self.extend_body_pos[:, ].reshape(-1, 3)).view(self.num_envs, -1, 3) + body_pos[:, self.extend_body_parent_ids]
-                body_pos_extend = torch.cat([body_pos, extend_curr_pos], dim=1)
-                body_pos_subset = body_pos_extend[:, self._track_bodies_extend_id, :]
-                
-                
-                ref_rb_pos_subset = ref_body_pos_extend[:, self._track_bodies_extend_id]
-                ref_body_vel_subset = ref_body_vel_extend[:, self._track_bodies_extend_id]
-                
-                # robot
-                dof_pos = self.dof_pos
-                dof_vel = self.dof_vel
-                base_vel = self.base_lin_vel
-                base_ang_vel = self.base_ang_vel
-                base_gravity = self.projected_gravity
-
-                # ref_keypoint_pos_baseframe including 8 keypoints: handx2, elbowx2, shoulderx2, anklex2, 3dimx8keypoints = 18dim
-                root_pos = body_pos[..., 0, :]
-                root_rot = body_rot[..., 0, :]
-                root_vel = body_vel[:, 0, :]
-                root_ang_vel = body_ang_vel[:, 0, :]
-                ref_root_ang_vel = ref_body_ang_vel[:, 0, :]
-
-                if self.cfg.asset.clip_motion_goal:
-                    # import ipdb; ipdb.set_trace()
-                    ref_head = ref_rb_pos_subset[:, 2]
-                    body_xyz = self.root_states[:, :3]
-                    direction_to_body = body_xyz - ref_head
-                    xy_direction = direction_to_body[:,:2]
-                    distance = torch.norm(xy_direction, dim=1)
-                    # import ipdb; ipdb.set_trace()
-                    far = distance > self.cfg.asset.clip_motion_goal_distance
-                    direction_to_body_norm = F.normalize(direction_to_body[:,:2], p = 2, dim=1)
-                    # direction_to_body_norm = xy_direction / 
-                    ref_rb_pos_subset[far, 2, :2] = self.root_states[far, :2] - direction_to_body_norm[far] * self.cfg.asset.clip_motion_goal_distance
-                
-                if self.cfg.asset.zero_out_far: # ref_rb_pos_subset[0], ref_rb_pos_subset[1], head ref_rb_pos_subset[2]
-                    close_distance = self.cfg.asset.close_distance  
-                    distance = torch.norm(root_pos - ref_body_pos_extend[0::self.cfg.motion.num_traj_samples,0, :], dim=-1)
-                    zeros_subset = distance > close_distance
-
-                    self.prioritize_closing = zeros_subset
-                    if self.cfg.asset.zero_out_far_change_obs:
-                        
-                        if self.cfg.motion.future_tracks:
-                            n = self.cfg.motion.num_traj_samples
-                            # import ipdb; ipdb.set_trace()
-                            zeros_set_future = zeros_subset.repeat_interleave(n) # zeros_set_future[n * i: n * i + n] = zeros_subset
-                            # print(ref_rb_pos_subset[zeros_set_future, :2])
-                            body_pos = body_pos_subset[zeros_subset, :2] # two hands\
-                            ref_rb_pos_subset[zeros_set_future, :2] = body_pos.repeat_interleave(n,dim=0)
-                            # print(ref_rb_pos_subset[zeros_set_future, :2])
-                            root_vel_ = root_vel[zeros_subset].unsqueeze(1).repeat(1, 3, 1)
-                            ref_body_vel_subset[zeros_set_future, :] = root_vel_.repeat_interleave(n,dim=0)
-                            self.point_goal= distance
-                            far_distance = self.cfg.asset.far_distance  # does not seem to need this in particular...
-                            vector_zero_subset = distance > far_distance  # > 5 meters, it become just a direction
-                            vector_zero_subset_future = torch.zeros(n * len(vector_zero_subset), dtype=torch.bool)
-                            vector_zero_subset_future[::n] = vector_zero_subset # vector_zero_subset_future[n * i] = vector_zero_subset[i]
-                            vector_zero_subset_future2 = vector_zero_subset.repeat_interleave(n) # vector_zero_subset_future[n * i : n * i + n] = vector_zero_subset[i]
-                            dis_new = ((ref_rb_pos_subset[vector_zero_subset_future, 2] - body_pos_subset[vector_zero_subset, 2]) / distance[vector_zero_subset, None] * far_distance) + body_pos_subset[vector_zero_subset, 2]
-                            ref_rb_pos_subset[vector_zero_subset_future2, 2] = dis_new.repeat_interleave(n,dim=0)
-                        
-                        else:
-                            ref_rb_pos_subset[zeros_subset, :2] = body_pos_subset[zeros_subset, :2] # two hands\
-                            ref_body_vel_subset[zeros_subset, :] = root_vel[zeros_subset].unsqueeze(1).repeat(1, 3, 1)
-                            self.point_goal= distance
-                            far_distance = self.cfg.asset.far_distance  # does not seem to need this in particular...
-                            vector_zero_subset = distance > far_distance  # > 5 meters, it become just a direction
-                            ref_rb_pos_subset[vector_zero_subset, 2] = ((ref_rb_pos_subset[vector_zero_subset, 2] - body_pos_subset[vector_zero_subset, 2]) / distance[vector_zero_subset, None] * far_distance) + body_pos_subset[vector_zero_subset, 2]
-                        
-                
-                # self_obs = compute_humanoid_observations(body_pos, body_rot, root_vel, root_ang_vel, dof_pos, dof_vel, True, False) # 222
-                # import ipdb; ipdb.set_trace()
-                if self.cfg.motion.realtime_vr_keypoints:
-                    ref_rb_pos_subset = self.realtime_vr_keypoints_pos
-                    ref_body_vel_subset = self.realtime_vr_keypoints_vel
-                    assert self.cfg.motion.num_traj_samples == 1
-                
-                
-                task_obs = compute_imitation_observations_teleop_max(root_pos, root_rot, body_pos_subset, ref_rb_pos_subset, ref_body_vel_subset,  self.cfg.motion.num_traj_samples , ref_episodic_offset = self.ref_episodic_offset)
-                
-
-                
-
-                if self.cfg.env.add_short_history:
-                    assert self.cfg.env.short_history_length > 0
-                    history_to_be_append = self.trajectories[:, 0:self.cfg.env.short_history_length*63]
-                    obs = torch.cat([dof_pos, dof_vel, base_ang_vel, base_gravity,  # 19dim + 19dim + 3dim + 3dim 
-                                                task_obs,  # 
-                                                self.actions,
-                                                history_to_be_append], dim = -1) # 19dim
-                
-                else:
-                    obs = torch.cat([dof_pos, dof_vel, base_ang_vel, base_gravity,  # 19dim + 19dim + 3dim + 3dim 
-                                                task_obs,  # 
-                                                self.actions], dim = -1) # 19dim
-                    
-                if self.cfg.use_velocity_estimation:
-                    self.ready_for_train_indices = self.episode_length_buf > 25
-                    current_obs_a = self.trajectories[self.ready_for_train_indices, :63]
-                    if current_obs_a.shape[0] > 0:
-                        raise NotImplementedError
-                        estimate_velocity = self.velocity_estimator(self.trajectories[self.ready_for_train_indices])
-                        obs[self.ready_for_train_indices,38:41] = estimate_velocity
-                        
-                        
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend-vr-max-nolinvel-heading':
-                body_pos = self._rigid_body_pos
-                body_rot = self._rigid_body_rot
-                body_vel = self._rigid_body_vel
-                body_ang_vel = self._rigid_body_ang_vel
-                dof_pos = self.dof_pos
-                dof_vel = self.dof_vel
-                
-                extend_curr_pos = torch_utils.my_quat_rotate(body_rot[:, self.extend_body_parent_ids].reshape(-1, 4), self.extend_body_pos[:, ].reshape(-1, 3)).view(self.num_envs, -1, 3) + body_pos[:, self.extend_body_parent_ids]
-                body_pos_extend = torch.cat([body_pos, extend_curr_pos], dim=1)
-                body_pos_subset = body_pos_extend[:, self._track_bodies_extend_id, :]
-                body_rot_extend = torch.cat([body_rot, body_rot[:, self.extend_body_parent_ids]], dim=1)
-                body_rot_subset = body_rot_extend[:, self._track_bodies_extend_id, :]
-                
-                ref_rb_pos_subset = ref_body_pos_extend[:, self._track_bodies_extend_id]
-                ref_rb_rot_subset = ref_body_rot_extend[:, self._track_bodies_extend_id]
-                ref_body_vel_subset = ref_body_vel_extend[:, self._track_bodies_extend_id]
-                
-                # robot
-                dof_pos = self.dof_pos
-                dof_vel = self.dof_vel
-                base_vel = self.base_lin_vel
-                base_ang_vel = self.base_ang_vel
-                base_gravity = self.projected_gravity
-
-                # ref_keypoint_pos_baseframe including 8 keypoints: handx2, elbowx2, shoulderx2, anklex2, 3dimx8keypoints = 18dim
-                root_pos = body_pos[..., 0, :]
-                root_rot = body_rot[..., 0, :]
-                root_vel = body_vel[:, 0, :]
-                root_ang_vel = body_ang_vel[:, 0, :]
-                ref_root_ang_vel = ref_body_ang_vel[:, 0, :]
-
-                if self.cfg.asset.clip_motion_goal:
-                    # import ipdb; ipdb.set_trace()
-                    ref_head = ref_rb_pos_subset[:, 2]
-                    body_xyz = self.root_states[:, :3]
-                    direction_to_body = body_xyz - ref_head
-                    xy_direction = direction_to_body[:,:2]
-                    distance = torch.norm(xy_direction, dim=1)
-                    # import ipdb; ipdb.set_trace()
-                    far = distance > self.cfg.asset.clip_motion_goal_distance
-                    direction_to_body_norm = F.normalize(direction_to_body[:,:2], p = 2, dim=1)
-                    # direction_to_body_norm = xy_direction / 
-                    ref_rb_pos_subset[far, 2, :2] = self.root_states[far, :2] - direction_to_body_norm[far] * self.cfg.asset.clip_motion_goal_distance
-                
-                if self.cfg.asset.zero_out_far: # ref_rb_pos_subset[0], ref_rb_pos_subset[1], head ref_rb_pos_subset[2]
-                    close_distance = self.cfg.asset.close_distance  
-                    distance = torch.norm(root_pos - ref_body_pos_extend[0::self.cfg.motion.num_traj_samples,0, :], dim=-1)
-                    zeros_subset = distance > close_distance
-
-                    self.prioritize_closing = zeros_subset
-                    if self.cfg.asset.zero_out_far_change_obs:
-                        
-                        if self.cfg.motion.future_tracks:
-                            n = self.cfg.motion.num_traj_samples
-                            # import ipdb; ipdb.set_trace()
-                            zeros_set_future = zeros_subset.repeat_interleave(n) # zeros_set_future[n * i: n * i + n] = zeros_subset
-                            # print(ref_rb_pos_subset[zeros_set_future, :2])
-                            body_pos = body_pos_subset[zeros_subset, :2] # two hands\
-                            ref_rb_pos_subset[zeros_set_future, :2] = body_pos.repeat_interleave(n,dim=0)
-                            # print(ref_rb_pos_subset[zeros_set_future, :2])
-                            root_vel_ = root_vel[zeros_subset].unsqueeze(1).repeat(1, 3, 1)
-                            ref_body_vel_subset[zeros_set_future, :] = root_vel_.repeat_interleave(n,dim=0)
-                            self.point_goal= distance
-                            far_distance = self.cfg.asset.far_distance  # does not seem to need this in particular...
-                            vector_zero_subset = distance > far_distance  # > 5 meters, it become just a direction
-                            vector_zero_subset_future = torch.zeros(n * len(vector_zero_subset), dtype=torch.bool)
-                            vector_zero_subset_future[::n] = vector_zero_subset # vector_zero_subset_future[n * i] = vector_zero_subset[i]
-                            vector_zero_subset_future2 = vector_zero_subset.repeat_interleave(n) # vector_zero_subset_future[n * i : n * i + n] = vector_zero_subset[i]
-                            dis_new = ((ref_rb_pos_subset[vector_zero_subset_future, 2] - body_pos_subset[vector_zero_subset, 2]) / distance[vector_zero_subset, None] * far_distance) + body_pos_subset[vector_zero_subset, 2]
-                            ref_rb_pos_subset[vector_zero_subset_future2, 2] = dis_new.repeat_interleave(n,dim=0)
-                        
-                        else:
-                            ref_rb_pos_subset[zeros_subset, :2] = body_pos_subset[zeros_subset, :2] # two hands\
-                            ref_body_vel_subset[zeros_subset, :] = root_vel[zeros_subset].unsqueeze(1).repeat(1, 3, 1)
-                            self.point_goal= distance
-                            far_distance = self.cfg.asset.far_distance  # does not seem to need this in particular...
-                            vector_zero_subset = distance > far_distance  # > 5 meters, it become just a direction
-                            ref_rb_pos_subset[vector_zero_subset, 2] = ((ref_rb_pos_subset[vector_zero_subset, 2] - body_pos_subset[vector_zero_subset, 2]) / distance[vector_zero_subset, None] * far_distance) + body_pos_subset[vector_zero_subset, 2]
-                        
-                
-                # self_obs = compute_humanoid_observations(body_pos, body_rot, root_vel, root_ang_vel, dof_pos, dof_vel, True, False) # 222
-                # import ipdb; ipdb.set_trace()
-                if self.cfg.motion.realtime_vr_keypoints:
-                    ref_rb_pos_subset = self.realtime_vr_keypoints_pos
-                    ref_body_vel_subset = self.realtime_vr_keypoints_vel
-                    assert self.cfg.motion.num_traj_samples == 1
-                
-                task_obs = compute_imitation_observations_teleop_max_heading(root_pos, root_rot, body_pos_subset, body_rot_subset[:, -1, :], ref_rb_pos_subset, ref_rb_rot_subset[:, -1, :], ref_body_vel_subset,  self.cfg.motion.num_traj_samples , ref_episodic_offset = self.ref_episodic_offset)
-                
-
-                
-
-                if self.cfg.env.add_short_history:
-                    assert self.cfg.env.short_history_length > 0
-                    history_to_be_append = self.trajectories[:, 0:self.cfg.env.short_history_length*63]
-                    obs = torch.cat([dof_pos, dof_vel, base_ang_vel, base_gravity,  # 19dim + 19dim + 3dim + 3dim 
-                                                task_obs,  # 
-                                                self.actions,
-                                                history_to_be_append], dim = -1) # 19dim
-                
-                else:
-                    obs = torch.cat([dof_pos, dof_vel, base_ang_vel, base_gravity,  # 19dim + 19dim + 3dim + 3dim 
-                                                task_obs,  # 
-                                                self.actions], dim = -1) # 19dim
-                    
-                if self.cfg.use_velocity_estimation:
-                    self.ready_for_train_indices = self.episode_length_buf > 25
-                    current_obs_a = self.trajectories[self.ready_for_train_indices, :63]
-                    if current_obs_a.shape[0] > 0:
-                        raise NotImplementedError
-                        estimate_velocity = self.velocity_estimator(self.trajectories[self.ready_for_train_indices])
-                        obs[self.ready_for_train_indices,38:41] = estimate_velocity
-
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend-max-full':
+            if self.cfg.motion.teleop_obs_version == 'v-teleop-extend-max-full':
                 body_pos = self._rigid_body_pos # [N, 19, 3]
                 body_rot = self._rigid_body_rot # [N, 19, 4]
                 body_vel = self._rigid_body_vel # [N, 19, 3]
@@ -1474,26 +656,9 @@ class StompyLeggedRobot(BaseTask):
                 
                 extend_curr_pos = torch_utils.my_quat_rotate(body_rot[:, self.extend_body_parent_ids].reshape(-1, 4), self.extend_body_pos[:, ].reshape(-1, 3)).view(self.num_envs, -1, 3) + body_pos[:, self.extend_body_parent_ids] # [N, 3, 3]
                 body_pos_extend = torch.cat([body_pos, extend_curr_pos], dim=1) # [N, 22, 3]
-                # print(f"body_pos_extend.shape: {body_pos_extend.shape}")
-                # print(f"self._track_bodies_extend_id: {self._track_bodies_extend_id}")
-                # track_bodies_extend_id_tensor = torch.tensor(self._track_bodies_extend_id, device=body_pos_extend.device)
-
-                # # Ensure the indices are valid
-                # assert torch.all((track_bodies_extend_id_tensor >= 0)), "Index out of bounds1"
-                # if not torch.all(track_bodies_extend_id_tensor < body_pos_extend.shape[1]):
-                #     print("Error: Index out of bounds in the second dimension")
-                #     print(f"track_bodies_extend_id_tensor: {track_bodies_extend_id_tensor}")
-                #     print(f"body_pos_extend.shape[1]: {body_pos_extend.shape[1]}")
-                #     out_of_bounds_indices = track_bodies_extend_id_tensor[track_bodies_extend_id_tensor >= body_pos_extend.shape[1]]
-                #     print(f"Out of bounds indices: {out_of_bounds_indices}")
-                #     raise ValueError("Index out of bounds in the second dimension")
-
                 body_pos_subset = body_pos_extend[:, self._track_bodies_extend_id, :]
 
-                # print(f"body_rot.shape: {body_rot.shape}")
-                # print(f"self.extend_body_parent_ids: {self.extend_body_parent_ids}")
                 extend_curr_rot = body_rot[:, self.extend_body_parent_ids].clone()
-                # extend_curr_rot = body_rot[:, self.extend_body_parent_ids]
                 body_rot_extend = torch.cat([body_rot, extend_curr_rot], dim=1)
                 body_rot_subset = body_rot_extend[:, self._track_bodies_extend_id, :]
 
@@ -1528,10 +693,6 @@ class StompyLeggedRobot(BaseTask):
                 
                 if self.cfg.asset.zero_out_far: # ref_rb_pos_subset[0], ref_rb_pos_subset[1], head ref_rb_pos_subset[2]
                     close_distance = self.cfg.asset.close_distance  
-                    # import ipdb; ipdb.set_trace()  
-
-                    # distance = torch.norm(root_pos - ref_body_pos_extend[..., 0, :], dim=-1)
-                    
                     distance = torch.norm(root_pos - ref_body_pos_extend[0::self.cfg.motion.num_traj_samples,0, :], dim=-1)
                     zeros_subset = distance > close_distance
 
@@ -1707,9 +868,6 @@ class StompyLeggedRobot(BaseTask):
         
         # add noise if needed
         if self.add_noise:
-            # print("Adding noise")
-            # print("Noise scale: ", self.noise_scale_vec)
-            # print("before: ", self.obs_buf)
             noise_rescale = torch.ones(self.num_envs, 1, device=self.device)
             if self.cfg.motion.teleop:
                 if self.cfg.motion.curriculum and self.cfg.motion.obs_noise_by_curriculum:
@@ -1811,12 +969,8 @@ class StompyLeggedRobot(BaseTask):
             raise NameError("Can't measure height with terrain mesh type 'none'")
 
         if env_ids:
-        #    points = quat_apply_yaw(self.base_quat[env_ids].repeat(1, self.num_height_points),
-        #                            self.height_points[env_ids]) + (self.root_states[env_ids, :3]).unsqueeze(1)
             points = (quat_apply_yaw(self.base_quat[env_ids].repeat(1, self.num_height_points), self.height_points[env_ids]) + position.view(self.num_envs, -1, 3))
         else:
-        #    points = quat_apply_yaw(self.base_quat.repeat(1, self.num_height_points), self.height_points) + (
-        #    self.root_states[:, :3]).unsqueeze(1)
             points = (quat_apply_yaw(self.base_quat.repeat(1, self.num_height_points), self.height_points) + (position).view(self.num_envs, -1, 3)) 
 
 
@@ -1875,13 +1029,7 @@ class StompyLeggedRobot(BaseTask):
                                                         else self.cfg.motion.visualize_config.marker_joint_colors[pos_id % len(self.cfg.motion.visualize_config.marker_joint_colors)]
                         color_inner = tuple(color_inner)
                         sphere_geom_marker = gymutil.WireframeSphereGeometry(0.04, 20, 20, None, color=color_inner)
-                        # sphere_geom3 = gymutil.WireframeSphereGeometry(0.05, 4, 4, None, color=(1., 1.0, 1.0))
                         if self.cfg.domain_rand.randomize_motion_ref_xyz:
-                            # import ipdb; ipdb.set_trace()
-                            # pos_joint[0] += self.ref_episodic_offset[env_id][0]
-                            # pos_joint[1] += self.ref_episodic_offset[env_id][1]
-                            # pos_joint[2] += self.ref_episodic_offset[env_id][2]
-                            # import ipdb; ipdb.set_trace()
                             if pos_id == 22:
                                 pos_joint += self.ref_episodic_offset[env_id]
                         sphere_pose = gymapi.Transform(gymapi.Vec3(pos_joint[0], pos_joint[1], pos_joint[2]), r=None)
@@ -1935,8 +1083,8 @@ class StompyLeggedRobot(BaseTask):
             for i in range(len(props)):
                 self.dof_pos_limits[i, 0] = props["lower"][i].item()
                 self.dof_pos_limits[i, 1] = props["upper"][i].item()
-                self.dof_vel_limits[i] = 2*props["velocity"][i].item()
-                self.torque_limits[i] = 2*props["effort"][i].item()
+                self.dof_vel_limits[i] = props["velocity"][i].item()
+                self.torque_limits[i] = props["effort"][i].item()
                 # soft limits
                 m = (self.dof_pos_limits[i, 0] + self.dof_pos_limits[i, 1]) / 2
                 r = self.dof_pos_limits[i, 1] - self.dof_pos_limits[i, 0]
@@ -1945,20 +1093,6 @@ class StompyLeggedRobot(BaseTask):
         return props
 
     def _process_rigid_body_props(self, props, env_id):
-        # if env_id==0:
-        #     sum = 0
-        #     for i, p in enumerate(props):
-        #         sum += p.mass
-        #         print(f"Mass of body {i}: {p.mass} (before randomization)")
-        #     print(f"Total mass {sum} (before randomization)")
-        # sum_mass = 0
-        # print(env_id)
-        # for i in range(len(props)):
-        #     print(f"Mass of body {i}: {props[i].mass} (before randomization)")
-        #     sum_mass += props[i].mass
-        
-        # print(f"Total mass {sum_mass} (before randomization)")
-        # print()
 
         # randomize base com
         if self.cfg.domain_rand.randomize_base_com:
@@ -1994,13 +1128,6 @@ class StompyLeggedRobot(BaseTask):
             rng = self.cfg.domain_rand.added_mass_range
             props[0].mass += np.random.uniform(rng[0], rng[1])
         sum_mass = 0
-        # print(env_id)
-        # for i in range(len(props)):
-        #     print(f"Mass of body {i}: {props[i].mass} (after randomization)")
-        #     sum_mass += props[i].mass
-        
-        # print(f"Total mass {sum_mass} (afters randomization)")
-        # print()
 
         return props
     
@@ -2008,13 +1135,8 @@ class StompyLeggedRobot(BaseTask):
         """ Callback called before computing terminations, rewards, and observations
             Default behaviour: Compute ang vel command based on target and heading, compute measured terrain heights and randomly push robots
         """
-        # 
         env_ids = (self.episode_length_buf % int(self.cfg.commands.resampling_time / self.dt)==0).nonzero(as_tuple=False).flatten()
         self._resample_commands(env_ids)
-        
-        # if self.cfg.motion.teleop:
-            # self.motion_times += self.dt # TODO: align with motion_dt. ZL: don't need that, motion lib will handle it. 
-            # self._update_motion_reference()
         
         if self.cfg.commands.heading_command:
             forward = quat_apply(self.base_quat, self.forward_vec)
@@ -2094,9 +1216,8 @@ class StompyLeggedRobot(BaseTask):
             motion_times = (self.episode_length_buf) * self.dt + self.motion_start_times # next frames so +1
             offset = self.env_origins + self.env_origins_init_3Doffset
 
-            # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset= offset)
             motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
-            # print(motion_res['dof_pos'].shape)
+            print(motion_res['dof_pos'].shape)
             self.dof_pos[env_ids] = motion_res['dof_pos'][env_ids]
             self.dof_vel[env_ids] = motion_res['dof_vel'][env_ids]
             
@@ -2106,11 +1227,9 @@ class StompyLeggedRobot(BaseTask):
 
         env_ids_int32 = env_ids.to(dtype=torch.int32)
         
-        # env_ids_int32 = torch.cat([env_ids_int32 * (self._num_teleop_markers+1) + _actor for _actor in range(self._num_teleop_markers+1)], dim=0).to(dtype=torch.int32)
         if self.cfg.motion.teleop and self.cfg.motion.visualize:
             env_ids_int32 *= (self.cfg.motion.num_markers+1)
                 
-        # print("before reset dof"); import pdb; pdb.set_trace()
         self.gym.set_dof_state_tensor_indexed(self.sim,
                                               gymtorch.unwrap_tensor(self.dof_state),
                                               gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
@@ -2131,25 +1250,16 @@ class StompyLeggedRobot(BaseTask):
 
                 motion_times = (self.episode_length_buf) * self.dt + self.motion_start_times # next frames so +1
                 offset = self.env_origins + self.env_origins_init_3Doffset
-                # import ipdb; ipdb.set_trace()
-                # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset= offset)
                 motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
                 
                 self.root_states[env_ids, :3] = motion_res['root_pos'][env_ids]
-                # print("root",motion_res['root_pos'][env_ids])
-                # self.root_states[env_ids, 2] += 0.03 # in case under the terrain
                 self.root_states[env_ids, 2] += 0.04 # in case under the terrain
 
-                # self.root_states[env_ids, 0] += 5.0 # in case under the terrain
-                # self.root_states[env_ids, 1] += 5.0 # in case under the terrain
                 if self.cfg.domain_rand.born_offset:
                     rand_num = np.random.rand()
                     if rand_num < self.cfg.domain_rand.born_offset_possibility:
                         randomize_distance = torch_rand_float(-self.cfg.domain_rand.born_distance, self.cfg.domain_rand.born_distance, (len(env_ids), 2), device=self.device)
-                        # import ipdb; ipdb.set_trace()
-                        # randomize_distance = torch.clamp(randomize_distance,self.cfg.domain_rand.born_offset_range[0], self.cfg.domain_rand.born_offset_range[1])
                         self.root_states[env_ids, :2] += randomize_distance
-                        # self.root_states[env_ids, :2] += torch_rand_float(self.cfg.domain_rand.born_offset_range[0], self.cfg.domain_rand.born_offset_range[1], (len(env_ids), 2), device=self.device)
                 self.root_states[env_ids, 3:7] = motion_res['root_rot'][env_ids]
                 self.root_states[env_ids, 7:10] = motion_res['root_vel'][env_ids] # ZL: use random velicty initation should be more robust? 
                 self.root_states[env_ids, 10:13] = motion_res['root_ang_vel'][env_ids]
@@ -2158,23 +1268,9 @@ class StompyLeggedRobot(BaseTask):
                 if self.cfg.domain_rand.born_heading_randomization:
                     random_angles_rad_axis = torch.zeros(len(env_ids),3, device=self.device)
                     random_angles = (torch.rand((len(env_ids),), device=self.device) * (2 * self.cfg.domain_rand.born_heading_degree) - self.cfg.domain_rand.born_heading_degree)
-                    # random_angles = torch_rand_float(-self.cfg.domain_rand.born_heading_degree, self.cfg.domain_rand.born_heading_degree, (len(env_ids),1), device=self.device).squeeze(-1)
-                    # random_angles = torch.rand(len(env_ids)) * 0 - 180
-                    # import ipdb; ipdb.set_trace()
                     random_angles_rad = torch.deg2rad(random_angles)
-                    # random_angles_rad = random_angles * 0
-                    # print("random_angles_rad_axis shape", random_angles_rad_axis.shape)
-                    # print("env_ids= ", env_ids)
-                    
                     random_angles_rad_axis[:, 0] = random_angles_rad
-                    # random_angles_rad_axis[env_ids, 0] = 2.7
-                    
                     self.root_states[env_ids, 3:7] = apply_rotation_to_quat_z(self.root_states[env_ids, 3:7], random_angles_rad_axis)
-                # import ipdb; ipdb.set_trace()
-                # self.measured_heights = self._get_heights().reshape((self.num_envs))
-                # delta_height = self.measured_heights[env_ids] - offset[env_ids, 2]
-                # self.root_states[env_ids, 2] += delta_height
-                # motion_res['root_pos'][env_ids,2] += delta_height
                 
                 self._rigid_body_pos[env_ids] = motion_res['rg_pos'][env_ids]
                 self._rigid_body_rot[env_ids] = motion_res['rb_rot'][env_ids]
@@ -2372,346 +1468,40 @@ class StompyLeggedRobot(BaseTask):
             # noise_vec[6+2*self.num_actions    :   6+3*self.num_actions] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
             # noise_vec[6+3*self.num_actions    :   6+4*self.num_actions] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel 
             # noise_vec[6+4*self.num_actions    :                       ] = 0. # previous actions, commands
-            if self.cfg.motion.teleop_obs_version == 'v1':
-
-                # SELF_OBSERVATION
-                root_height_obs_end_idx = 1
-                noise_vec[0: root_height_obs_end_idx] = noise_scales.height_measurements * noise_level * self.obs_scales.height_measurements # [0: 1]
-
-                body_pos_end_idx = 1 + self.num_actions*3 # 3x19 -> 57dim
-                noise_vec[0: body_pos_end_idx] = noise_scales.body_pos * noise_level * self.obs_scales.body_pos # [1: 58]
-
-                body_rot_end_idx = body_pos_end_idx + self.num_actions*6 + 6 # 6x20 -> 120dim  
-                noise_vec[body_pos_end_idx: body_rot_end_idx] = noise_scales.body_rot * noise_level * self.obs_scales.body_rot # [58: 178]
-
-                root_lin_vel_end_idx = body_rot_end_idx + 3 # 3dim
-                noise_vec[body_rot_end_idx: root_lin_vel_end_idx] = noise_scales.lin_vel * noise_level * self.obs_scales.lin_vel # [178:181]
-
-                root_ang_vel_end_idx = root_lin_vel_end_idx + 3 # 3dim
-                noise_vec[root_lin_vel_end_idx: root_ang_vel_end_idx] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel # [181:184]
-
-                dof_pos_end_idx = root_ang_vel_end_idx + self.num_actions # 1x19 -> 19dim
-                noise_vec[root_ang_vel_end_idx: dof_pos_end_idx] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos # [184:203]
-
-                dof_vel_end_idx = dof_pos_end_idx + self.num_actions # 1x19 -> 19dim
-                noise_vec[dof_pos_end_idx: dof_vel_end_idx] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel # [203:222]
-
-                # TAKS OBSERVATION
-                diff_local_body_pos_flat_end_idx = dof_vel_end_idx + self.num_actions*3 + 3 # 3x20 -> 60dim
-                noise_vec[dof_vel_end_idx: diff_local_body_pos_flat_end_idx] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos # [222:282]
-
-                diff_local_body_rot_flat_end_idx = diff_local_body_pos_flat_end_idx + self.num_actions*6 + 6 # 6x20 -> 120dim
-                noise_vec[diff_local_body_pos_flat_end_idx: diff_local_body_rot_flat_end_idx] = noise_scales.ref_body_rot * noise_level * self.obs_scales.body_rot # [282:402]
-
-                diff_local_lin_vel_end_idx = diff_local_body_rot_flat_end_idx + 3 # 3dim
-                noise_vec[diff_local_body_rot_flat_end_idx: diff_local_lin_vel_end_idx] = noise_scales.ref_lin_vel * noise_level * self.obs_scales.lin_vel # [402:405]
-
-                diff_local_ang_vel_end_idx = diff_local_lin_vel_end_idx + 3 # 3dim
-                noise_vec[diff_local_lin_vel_end_idx: diff_local_ang_vel_end_idx] = noise_scales.ref_ang_vel * noise_level * self.obs_scales.ang_vel # [405:408]
-
-                diff_local_ref_body_pos_root_end_idx = diff_local_ang_vel_end_idx + self.num_actions*3 + 3 # 3x20 -> 60dim
-                noise_vec[diff_local_ang_vel_end_idx: diff_local_ref_body_pos_root_end_idx] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos # [408:468]
-
-                diff_local_ref_body_rot_root_end_idx = diff_local_ref_body_pos_root_end_idx + self.num_actions*6 + 6 # 6x20 -> 120dim
-                noise_vec[diff_local_ref_body_pos_root_end_idx: diff_local_ref_body_rot_root_end_idx] = noise_scales.ref_body_rot * noise_level * self.obs_scales.body_rot # [468:588]
-
-                diff_dof_pos_end_idx = diff_local_ref_body_rot_root_end_idx + self.num_actions # 1x19 -> 19dim
-                noise_vec[diff_local_ref_body_rot_root_end_idx: diff_dof_pos_end_idx] = noise_scales.ref_dof_pos * noise_level * self.obs_scales.dof_pos # [588:607]
-
-                diff_dof_vel_end_idx = diff_dof_pos_end_idx + self.num_actions # 1x19 -> 19dim
-                noise_vec[diff_dof_pos_end_idx: diff_dof_vel_end_idx] = noise_scales.ref_dof_vel * noise_level * self.obs_scales.dof_vel # [607:626]
-
-                # PROJECTED GRAVITY
-                projected_gravity_end_idx = diff_dof_vel_end_idx + 3 # 3dim
-                noise_vec[diff_dof_vel_end_idx: projected_gravity_end_idx] = noise_scales.gravity * noise_level # [626:629]
-                #import ipdb; ipdb.set_trace()
-                # LAST ACTION
-                last_action_end_idx = projected_gravity_end_idx + self.num_actions
-                noise_vec[projected_gravity_end_idx: last_action_end_idx] = 0. # [629:648]
-            elif self.cfg.motion.teleop_obs_version == 'v-min':
-                # self.obs_buf = torch.cat([dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity, delta_base_pos, delta_heading,
-                #             ref_dof_pos, ref_dof_vel, ref_base_vel, ref_base_ang_vel,ref_base_gravity,
-                #             self.actions], dim = -1)
-                # raise NotImplementedError
-                # print(colored("Not Implemented", "red"))
-                # dof_pos
-                noise_vec[0                   : self.num_dof] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-                # dof vel
-                noise_vec[self.num_dof        : 2*self.num_dof    ] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-                # base vel
-                noise_vec[2*self.num_dof      : 2*self.num_dof + 3] = noise_scales.lin_vel * noise_level * self.obs_scales.lin_vel
-                # base ang vel
-                noise_vec[2*self.num_dof + 3  : 2*self.num_dof + 6] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-                # base gravity
-                noise_vec[2*self.num_dof + 6  : 2*self.num_dof + 9] = noise_scales.gravity * noise_level
-                # x y heading targets
-                noise_vec[2*self.num_dof + 9  : 2*self.num_dof + 12] = 0.
-                
-                # ref dof pos
-                noise_vec[2*self.num_dof + 12 : 3*self.num_dof + 12] = noise_scales.ref_dof_pos * noise_level * self.obs_scales.dof_pos
-                # ref dof vel
-                noise_vec[3*self.num_dof + 12 : 4*self.num_dof + 12] = noise_scales.ref_dof_vel * noise_level * self.obs_scales.dof_vel
-                # ref base vel
-                noise_vec[4*self.num_dof + 12 : 4*self.num_dof + 15] = noise_scales.ref_lin_vel * noise_level * self.obs_scales.lin_vel
-                # ref base ang vel
-                noise_vec[4*self.num_dof + 15 : 4*self.num_dof + 18] = noise_scales.ref_ang_vel * noise_level * self.obs_scales.ang_vel
-                # ref base gravity
-                noise_vec[4*self.num_dof + 18 : 4*self.num_dof + 21] = noise_scales.ref_gravity * noise_level
-                
-                # self.actions
-                noise_vec[4*self.num_dof + 21 : ] = 0.                
-            elif self.cfg.motion.teleop_obs_version == 'v-min2':
-                # dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity, delta_base_pos, delta_heading, ref_dof_pos, self.actions   
-                # dof_pos
-                noise_vec[0                   : self.num_dof      ] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-                # dof vel
-                noise_vec[self.num_dof        : 2*self.num_dof    ] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-                # base vel
-                noise_vec[2*self.num_dof      : 2*self.num_dof + 3] = noise_scales.lin_vel * noise_level * self.obs_scales.lin_vel
-                # base ang vel
-                noise_vec[2*self.num_dof + 3  : 2*self.num_dof + 6] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-                # base gravity
-                noise_vec[2*self.num_dof + 6  : 2*self.num_dof + 9] = noise_scales.gravity * noise_level
-                # delta base pos dim2
-                noise_vec[2*self.num_dof + 9  : 2*self.num_dof + 11] = noise_scales.delta_base_pos * noise_level * self.obs_scales.delta_base_pos
-                # delta heading dim=1
-                noise_vec[2*self.num_dof + 11 : 2*self.num_dof + 12] = noise_scales.delta_heading * noise_level * self.obs_scales.delta_heading
-                # ref dof pos
-                noise_vec[2*self.num_dof + 12 : 3*self.num_dof + 12] = noise_scales.ref_dof_pos * noise_level * self.obs_scales.dof_pos
-                # last actions
-                noise_vec[3*self.num_dof + 12 : 4*self.num_dof + 12] = noise_scales.last_action * noise_level
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop':
-                # dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity, delta_base_pos, delta_heading, ref_local_selected_body_pos, self.actions   
-                # dof_pos
-                noise_vec[0                   : self.num_dof      ] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-                # dof vel
-                noise_vec[self.num_dof        : 2*self.num_dof    ] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-                # base vel
-                noise_vec[2*self.num_dof      : 2*self.num_dof + 3] = noise_scales.lin_vel * noise_level * self.obs_scales.lin_vel
-                # base ang vel
-                noise_vec[2*self.num_dof + 3  : 2*self.num_dof + 6] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-                # base gravity
-                noise_vec[2*self.num_dof + 6  : 2*self.num_dof + 9] = noise_scales.gravity * noise_level
-                # delta base pos dim2
-                noise_vec[2*self.num_dof + 9  : 2*self.num_dof + 11] = noise_scales.delta_base_pos * noise_level * self.obs_scales.delta_base_pos
-                # delta heading dim=1
-                noise_vec[2*self.num_dof + 11 : 2*self.num_dof + 12] = noise_scales.delta_heading * noise_level * self.obs_scales.delta_heading
-                # ref dof pos
-                noise_vec[2*self.num_dof + 12 : 2*self.num_dof + 12 + len(self.cfg.motion.teleop_selected_keypoints_names)*3] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos
-                # last actions
-                self._rigid_body_pos
-                noise_vec[2*self.num_dof + 12 + len(self.cfg.motion.teleop_selected_keypoints_names)*3 : 3*self.num_dof + 12 + len(self.cfg.motion.teleop_selected_keypoints_names)*3] = noise_scales.last_action * noise_level
-                
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-clean':
-                # dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity, delta_base_pos, delta_heading, ref_local_selected_body_pos, self.actions   
-                # dof_pos
-                noise_vec[0                   : self.num_dof      ] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-                # dof vel
-                noise_vec[self.num_dof        : 2*self.num_dof    ] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-                # base vel
-                noise_vec[2*self.num_dof      : 2*self.num_dof + 3] = noise_scales.lin_vel * noise_level * self.obs_scales.lin_vel
-                # base ang vel
-                noise_vec[2*self.num_dof + 3  : 2*self.num_dof + 6] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-                # base gravity
-                noise_vec[2*self.num_dof + 6  : 2*self.num_dof + 9] = noise_scales.gravity * noise_level
-                # ref dof pos
-                noise_vec[2*self.num_dof + 9 : 2*self.num_dof + 9 + len(self.cfg.motion.teleop_selected_keypoints_names)*3] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos
-                # last actions
-                noise_vec[2*self.num_dof + 9 + len(self.cfg.motion.teleop_selected_keypoints_names)*3 : 3*self.num_dof + 9 + len(self.cfg.motion.teleop_selected_keypoints_names)*3] = noise_scales.last_action * noise_level
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-superclean':
-                # dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity, delta_base_pos, delta_heading, ref_local_selected_body_pos, self.actions   
-                # dof_pos
-                noise_vec[0                   : self.num_dof      ] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-                # dof vel
-                noise_vec[self.num_dof        : 2*self.num_dof    ] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-                # ref dof pos
-                noise_vec[2*self.num_dof : 2*self.num_dof + len(self.cfg.motion.teleop_selected_keypoints_names)*3] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos
-                # last actions
-                noise_vec[2*self.num_dof + len(self.cfg.motion.teleop_selected_keypoints_names)*3 : 3*self.num_dof + len(self.cfg.motion.teleop_selected_keypoints_names)*3] = noise_scales.last_action * noise_level
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-clean-nolastaction':
-                # dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity, delta_base_pos, delta_heading, ref_local_selected_body_pos, self.actions   
-                # dof_pos
-                noise_vec[0                   : self.num_dof      ] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-                # dof vel
-                noise_vec[self.num_dof        : 2*self.num_dof    ] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-                # base vel
-                noise_vec[2*self.num_dof      : 2*self.num_dof + 3] = noise_scales.lin_vel * noise_level * self.obs_scales.lin_vel
-                # base ang vel
-                noise_vec[2*self.num_dof + 3  : 2*self.num_dof + 6] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-                # base gravity
-                noise_vec[2*self.num_dof + 6  : 2*self.num_dof + 9] = noise_scales.gravity * noise_level
-                # ref dof pos
-                noise_vec[2*self.num_dof + 9 : 2*self.num_dof + 9 + len(self.cfg.motion.teleop_selected_keypoints_names)*3] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos    
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend':
-                # dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity, delta_base_pos, delta_heading, ref_local_selected_body_pos, self.actions   
-                # dof_pos
-                noise_vec[0                   : self.num_dof      ] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-                # dof vel
-                noise_vec[self.num_dof        : 2*self.num_dof    ] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-                # base vel
-                noise_vec[2*self.num_dof      : 2*self.num_dof + 3] = noise_scales.lin_vel * noise_level * self.obs_scales.lin_vel
-                # base ang vel
-                noise_vec[2*self.num_dof + 3  : 2*self.num_dof + 6] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-                # base gravity
-                noise_vec[2*self.num_dof + 6  : 2*self.num_dof + 9] = noise_scales.gravity * noise_level
-                # ref dof pos
-                noise_vec[2*self.num_dof + 9 : 2*self.num_dof + 9 + (len(self.cfg.motion.teleop_selected_keypoints_names) + 2)*3] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos    
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend-nolinvel':
-                
-                # dof_pos, dof_vel, base_vel, base_ang_vel, base_gravity, delta_base_pos, delta_heading, ref_local_selected_body_pos, self.actions   
-                noise_vec[0                   : self.num_dof      ] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-                # dof vel
-                noise_vec[self.num_dof        : 2*self.num_dof    ] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-                # angular velocity
-                noise_vec[2*self.num_dof  : 2*self.num_dof + 3] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-                # base gravity
-                noise_vec[2*self.num_dof + 3  : 2*self.num_dof + 6] = noise_scales.gravity * noise_level
-                # ref body pos
-                noise_vec[2*self.num_dof + 6 : 2*self.num_dof + 6 + (len(self.cfg.motion.teleop_selected_keypoints_names)+2)*3] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos    
-                # last actions
-                noise_vec[2*self.num_dof + 6 + (len(self.cfg.motion.teleop_selected_keypoints_names)+2)*3 : ] = noise_scales.last_action * noise_level
-                
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend-max':
-                # local_body_pos.shape, local_body_rot_obs.shape, local_body_vel.shape, local_body_ang_vel.shape, dof_pos.shape, dof_vel.shape
-                # local_body_pos 3x19
-                noise_vec[0                   : self.num_dof      ] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-                # dof vel
-                noise_vec[self.num_dof        : 2*self.num_dof    ] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-                # base vel
-                noise_vec[2*self.num_dof      : 2*self.num_dof + 3] = noise_scales.lin_vel * noise_level * self.obs_scales.lin_vel
-                # base ang vel
-                noise_vec[2*self.num_dof + 3  : 2*self.num_dof + 6] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-                # base gravity
-                noise_vec[2*self.num_dof + 6  : 2*self.num_dof + 9] = noise_scales.gravity * noise_level
-                # ref dof pos
-                noise_vec[2*self.num_dof + 9 : 2*self.num_dof + 9 + (len(self.cfg.motion.teleop_selected_keypoints_names) + 2) *3 * 3] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos  
-
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend-max-full':
-                
+            if self.cfg.motion.teleop_obs_version == 'v-teleop-extend-max-full':
                 max_num_bodies = len(self.cfg.motion.teleop_selected_keypoints_names) + 3
                 curr_obs_len = 0
                 # body_pos
                 noise_vec[0                   : (max_num_bodies - 1) * 3      ] = noise_scales.body_pos * noise_level * self.obs_scales.dof_pos
                 curr_obs_len += (max_num_bodies - 1) * 3
-
                 # body_rot
                 noise_vec[curr_obs_len        : curr_obs_len + max_num_bodies * 6    ] = noise_scales.body_rot * noise_level * self.obs_scales.dof_vel
                 curr_obs_len += max_num_bodies * 6
-
                 # body vel
                 noise_vec[curr_obs_len        : curr_obs_len + max_num_bodies * 3] = noise_scales.body_lin_vel * noise_level * self.obs_scales.lin_vel
                 curr_obs_len += max_num_bodies * 3
-
                 # body ang vel
                 noise_vec[curr_obs_len        : curr_obs_len + max_num_bodies * 3] = noise_scales.body_ang_vel * noise_level * self.obs_scales.ang_vel
                 self.self_obs_size = curr_obs_len
                 curr_obs_len += max_num_bodies * 3
-                
-                
                 # ref body_pos diff
                 noise_vec[curr_obs_len: curr_obs_len + max_num_bodies * 3] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos  
                 curr_obs_len += max_num_bodies * 3
-
                 # ref body_rot diff
                 noise_vec[curr_obs_len: curr_obs_len + max_num_bodies * 6] = noise_scales.ref_body_rot * noise_level * self.obs_scales.body_pos  
                 curr_obs_len += max_num_bodies * 6
-
                 # ref lin vel diff
                 noise_vec[curr_obs_len: curr_obs_len + max_num_bodies * 3] = noise_scales.ref_lin_vel * noise_level * self.obs_scales.body_pos  
                 curr_obs_len += max_num_bodies * 3
-
                 # ref ang vel diff
                 noise_vec[curr_obs_len: curr_obs_len + max_num_bodies * 3] = noise_scales.ref_ang_vel * noise_level * self.obs_scales.body_pos  
                 curr_obs_len += max_num_bodies * 3
-
                 # ref body_pos
                 noise_vec[curr_obs_len: curr_obs_len + max_num_bodies * 3] = noise_scales.ref_ang_vel * noise_level * self.obs_scales.body_pos  
                 curr_obs_len += max_num_bodies * 3
-
                 # ref body_rot
                 noise_vec[curr_obs_len: curr_obs_len + max_num_bodies * 6] = noise_scales.ref_ang_vel * noise_level * self.obs_scales.body_pos  
-                curr_obs_len += max_num_bodies * 6
-
-              
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend-max_no_vel':
-                # local_body_pos.shape, local_body_rot_obs.shape, local_body_vel.shape, local_body_ang_vel.shape, dof_pos.shape, dof_vel.shape
-                # local_body_pos 3x19
-                noise_vec[0                   : self.num_dof      ] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-                # dof vel
-                noise_vec[self.num_dof        : 2*self.num_dof    ] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-                # base vel
-                noise_vec[2*self.num_dof      : 2*self.num_dof + 3] = noise_scales.lin_vel * noise_level * self.obs_scales.lin_vel
-                # base ang vel
-                noise_vec[2*self.num_dof + 3  : 2*self.num_dof + 6] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-                # base gravity
-                noise_vec[2*self.num_dof + 6  : 2*self.num_dof + 9] = noise_scales.gravity * noise_level
-                # ref dof pos
-                noise_vec[2*self.num_dof + 9 : 2*self.num_dof + 9 + (len(self.cfg.motion.teleop_selected_keypoints_names) + 2) *3 * 3] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos  
-
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend-vr-max':
-                # local_body_pos.shape, local_body_rot_obs.shape, local_body_vel.shape, local_body_ang_vel.shape, dof_pos.shape, dof_vel.shape
-                # local_body_pos 3x19
-                noise_vec[0                   : self.num_dof      ] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-                # dof vel
-                noise_vec[self.num_dof        : 2*self.num_dof    ] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-                # base vel
-                noise_vec[2*self.num_dof      : 2*self.num_dof + 3] = noise_scales.lin_vel * noise_level * self.obs_scales.lin_vel
-                # base ang vel
-                noise_vec[2*self.num_dof + 3  : 2*self.num_dof + 6] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-                # base gravity
-                noise_vec[2*self.num_dof + 6  : 2*self.num_dof + 9] = noise_scales.gravity * noise_level
-                
-                self.self_obs_size = 2*self.num_dof + 9
-                # ref dof pos
-                if self.cfg.motion.future_tracks:
-                    noise_vec[2*self.num_dof + 9 : 2*self.num_dof + 9 + (len(self.cfg.motion.teleop_selected_keypoints_names) + 3) *3 * 3 * self.cfg.motion.num_traj_samples ] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos 
-                else:
-                    noise_vec[2*self.num_dof + 9 : 2*self.num_dof + 9 + (len(self.cfg.motion.teleop_selected_keypoints_names) + 3) * 3 * 3] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos  
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend-vr-max-nolinvel':
-                # local_body_pos.shape, local_body_rot_obs.shape, local_body_vel.shape, local_body_ang_vel.shape, dof_pos.shape, dof_vel.shape
-                # local_body_pos 3x19
-                noise_vec[0                   : self.num_dof      ] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-                # dof vel
-                noise_vec[self.num_dof        : 2*self.num_dof    ] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-                # base ang vel
-                noise_vec[2*self.num_dof   : 2*self.num_dof + 3] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-                # base gravity
-                noise_vec[2*self.num_dof + 3  : 2*self.num_dof + 6] = noise_scales.gravity * noise_level
-                
-                self.self_obs_size = 2*self.num_dof + 6
-                # ref dof pos
-                if self.cfg.motion.future_tracks:
-                    noise_vec[2*self.num_dof + 9 : 2*self.num_dof + 9 + (len(self.cfg.motion.teleop_selected_keypoints_names) + 3) *3 * 3 * self.cfg.motion.num_traj_samples ] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos 
-                else:
-                    noise_vec[2*self.num_dof + 9 : 2*self.num_dof + 9 + (len(self.cfg.motion.teleop_selected_keypoints_names) + 3) * 3 * 3] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos    
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend-max-nolinvel':
-                # local_body_pos.shape, local_body_rot_obs.shape, local_body_vel.shape, local_body_ang_vel.shape, dof_pos.shape, dof_vel.shape
-                # local_body_pos 3x19
-                noise_vec[0                   : self.num_dof      ] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-                # dof vel
-                noise_vec[self.num_dof        : 2*self.num_dof    ] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-                # base vel
-                # noise_vec[2*self.num_dof      : 2*self.num_dof + 3] = noise_scales.lin_vel * noise_level * self.obs_scales.lin_vel
-                # base ang vel
-                noise_vec[2*self.num_dof + 3 - 3 : 2*self.num_dof + 6 - 3] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-                # base gravity
-                noise_vec[2*self.num_dof + 6 - 3 : 2*self.num_dof + 9 - 3] = noise_scales.gravity * noise_level
-                # ref dof pos
-                noise_vec[2*self.num_dof + 9 - 3 : 2*self.num_dof + 9 + (len(self.cfg.motion.teleop_selected_keypoints_names) + 2) *3 * 3 - 3 ] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos    
-            elif self.cfg.motion.teleop_obs_version == 'v-teleop-extend-max-acc':
-                # local_body_pos.shape, local_body_rot_obs.shape, local_body_vel.shape, local_body_ang_vel.shape, dof_pos.shape, dof_vel.shape
-                # local_body_pos 3x19
-                noise_vec[0                   : self.num_dof      ] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-                # dof vel
-                noise_vec[self.num_dof        : 2*self.num_dof    ] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-                # base vel
-                noise_vec[2*self.num_dof      : 2*self.num_dof + 3] = noise_scales.lin_acc * noise_level * self.obs_scales.lin_acc # need to modify
-                # base ang vel
-                noise_vec[2*self.num_dof + 3  : 2*self.num_dof + 6] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-                # base gravity
-                noise_vec[2*self.num_dof + 6  : 2*self.num_dof + 9] = noise_scales.gravity * noise_level
-                # ref dof pos
-                noise_vec[2*self.num_dof + 9 : 2*self.num_dof + 9 + (len(self.cfg.motion.teleop_selected_keypoints_names) + 2) *3 * 3] = noise_scales.ref_body_pos * noise_level * self.obs_scales.body_pos  
+                curr_obs_len += max_num_bodies * 6              
             else:
                 raise NotImplementedError
         else:
@@ -4110,7 +2900,7 @@ class StompyLeggedRobot(BaseTask):
 
     def next_task(self):
         self.start_idx += self.num_envs
-        self._motion_lib.load_motions(skeleton_trees=self.skeleton_trees, gender_betas=[torch.zeros(17)] * self.num_envs, limb_weights=[np.zeros(10)] * self.num_envs, random_sample=False, start_idx=self.start_idx)
+        self._motion_lib.load_motions(skeleton_trees=self.skeleton_trees, gender_betas=[torch.zeros(18)] * self.num_envs, limb_weights=[np.zeros(10)] * self.num_envs, random_sample=False, start_idx=self.start_idx)
         self.reset()
         
         
