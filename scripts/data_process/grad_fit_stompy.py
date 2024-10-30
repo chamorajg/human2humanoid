@@ -112,7 +112,7 @@ for data_key in pbar:
     for iteration in range(500):
         verts, joints = smpl_parser_n.get_joints_verts(pose_aa_walk, shape_new, trans)
         pose_aa_stompy_new = torch.cat([gt_root_rot[None, :, None], stompy_rotation_axis * dof_pos_new, torch.zeros((1, N, 2, 3)).to(device)], axis = 2).to(device)
-        fk_return = stompy_fk.fk_batch(pose_aa_stompy_new, root_trans_offset[None, ])
+        fk_return = stompy_fk.fk_batch(pose_aa_stompy_new, root_trans_offset[None, ], remove_extension=False)
         diff = fk_return['global_translation'][:, :, stompy_joint_pick_idx] - joints[:, smpl_joint_pick_idx]
         loss_g = diff.norm(dim = -1).mean() 
         loss = loss_g

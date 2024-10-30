@@ -117,7 +117,7 @@ class Stompy_Batch:
         }
 
         
-    def fk_batch(self, pose, trans, convert_to_mat=True, return_full = False, dt=1/30):
+    def fk_batch(self, pose, trans, convert_to_mat=True, return_full = False, dt=1/30, remove_extension=True):
         device, dtype = pose.device, pose.dtype
         pose_input = pose.clone()
         B, seq_len = pose.shape[:2]
@@ -148,9 +148,10 @@ class Stompy_Batch:
             return_dict.global_rotation_mat_extend = wbody_mat.clone()
             return_dict.global_rotation_extend = wbody_rot
             
-            wbody_pos = wbody_pos[..., :-self._remove_idx, :]
-            wbody_mat = wbody_mat[..., :-self._remove_idx, :, :]
-            wbody_rot = wbody_rot[..., :-self._remove_idx, :]
+            if remove_extension:
+                wbody_pos = wbody_pos[..., :-self._remove_idx, :]
+                wbody_mat = wbody_mat[..., :-self._remove_idx, :, :]
+                wbody_rot = wbody_rot[..., :-self._remove_idx, :]
         
         # import pdb; pdb.set_trace()
         return_dict.global_translation = wbody_pos
