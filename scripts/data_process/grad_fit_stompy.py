@@ -78,7 +78,8 @@ smpl_joint_pick_idx = [SMPL_BONE_ORDER_NAMES.index(j) for j in smpl_joint_pick]
 smpl_parser_n = SMPL_Parser(model_path="data/smpl", gender="neutral")
 smpl_parser_n.to(device)
 
-amass_data = joblib.load('/home/kasm-user/PHC/sample_data/amass_copycat_take6_train.pkl') # From PHC
+base_dir = os.path.dirname(os.getcwd())
+amass_data = joblib.load(os.path.join(base_dir, 'PHC/sample_data/amass_copycat_take6_train.pkl')) # From PHC
 shape_new, scale = joblib.load("data/stompy/shape_optimized_v1.pkl")
 shape_new = shape_new.to(device)
 STOMPY_TORSO_OFFSET = 0.06 # Needs to be fixed not variable. 
