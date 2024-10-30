@@ -78,10 +78,11 @@ smpl_joint_pick_idx = [SMPL_BONE_ORDER_NAMES.index(j) for j in smpl_joint_pick]
 smpl_parser_n = SMPL_Parser(model_path="data/smpl", gender="neutral")
 smpl_parser_n.to(device)
 
-amass_data = joblib.load('/home/kasm-user/PHC/sample_data/amass_copycat_take6_train.pkl') # From PHC
+base_dir = os.path.dirname(os.getcwd())
+amass_data = joblib.load(os.path.join(base_dir, 'PHC/sample_data/amass_copycat_take6_train.pkl')) # From PHC
 shape_new, scale = joblib.load("data/stompy/shape_optimized_v1.pkl")
 shape_new = shape_new.to(device)
-
+STOMPY_TORSO_OFFSET = 0.06 # Needs to be fixed not variable. 
 
 
 stompy_fk = Stompy_Batch(device = device)
@@ -112,7 +113,7 @@ for data_key in pbar:
     for iteration in range(500):
         verts, joints = smpl_parser_n.get_joints_verts(pose_aa_walk, shape_new, trans)
         pose_aa_stompy_new = torch.cat([gt_root_rot[None, :, None], stompy_rotation_axis * dof_pos_new, torch.zeros((1, N, 2, 3)).to(device)], axis = 2).to(device)
-        fk_return = stompy_fk.fk_batch(pose_aa_stompy_new, root_trans_offset[None, ])
+        fk_return = stompy_fk.fk_batch(pose_aa_stompy_new, root_trans_offset[None, ], remove_extension=False)
         diff = fk_return['global_translation'][:, :, stompy_joint_pick_idx] - joints[:, smpl_joint_pick_idx]
         loss_g = diff.norm(dim = -1).mean() 
         loss = loss_g
@@ -131,8 +132,7 @@ for data_key in pbar:
 
     root_trans_offset_dump = root_trans_offset.clone()
 
-    root_trans_offset_dump[..., 2] -= fk_return.global_translation[..., 2].min().item() - 0.08
-
+    root_trans_offset_dump[..., 2] -= fk_return.global_translation[..., 2].min().item() + STOMPY_TORSO_OFFSET
     data_dump[data_key]={
             "root_trans_offset": root_trans_offset_dump.squeeze().cpu().detach().numpy(),
             "pose_aa": pose_aa_stompy_new.squeeze().cpu().detach().numpy(),   
@@ -140,8 +140,7 @@ for data_key in pbar:
             "root_rot": sRot.from_rotvec(gt_root_rot.cpu().numpy()).as_quat(),
             }
     
-    if count == 10:
-        joblib.dump(data_dump, "data/stompy/amass_train.pkl")
     count += 1
 
 joblib.dump(data_dump, "data/stompy/amass_train.pkl")
+joblib.dump(data_dump, "legged_gym/resources/motions/stompy/amass_train.pkl")

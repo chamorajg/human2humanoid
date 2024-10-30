@@ -21,7 +21,6 @@ STOMPY_ROTATION_AXIS = torch.tensor([
        [ 0, 0, 1], # L_shoulder_z # yaw
        [ 1, 0, 0], # L_elbow_x # roll
        
-
        [ 0, 1, 0], # R_hip_y # pitch
        [ 1, 0, 0], # R_hip_x # roll
        [ 0, 0, 1], # R_hip_z # yaw
@@ -44,9 +43,11 @@ class Stompy_Batch:
         self.mjcf_data = mjcf_data = self.from_mjcf(mjcf_file)
         self.extend_hand = extend_hand
         self.extend_head = extend_head
+        self._arm_indices = [9, 18] # Indices of forearm
+        self._root_index = [0] # To which head shall be attached.
         if extend_hand:
             self.model_names = mjcf_data['node_names'] + ["left_hand_keypoint_link", "right_hand_keypoint_link"]
-            self._parents = torch.cat((mjcf_data['parent_indices'], torch.tensor([13, 17]))).to(device) # Adding the hands joints
+            self._parents = torch.cat((mjcf_data['parent_indices'], torch.tensor(self._arm_indices))).to(device) # Adding the hands joints
             arm_length = 0.3
             self._offsets = torch.cat((mjcf_data['local_translation'], torch.tensor([[arm_length, 0, 0], [arm_length, 0, 0]])), dim = 0)[None, ].to(device)
             self._local_rotation = torch.cat((mjcf_data['local_rotation'], torch.tensor([[1, 0, 0, 0], [1, 0, 0, 0]])), dim = 0)[None, ].to(device)
@@ -60,11 +61,10 @@ class Stompy_Batch:
         if extend_head:
             self._remove_idx = 3
             self.model_names = self.model_names + ["head_link"]
-            self._parents = torch.cat((self._parents, torch.tensor([0]).to(device))).to(device) # Adding the hands joints
-            head_length = 0.75
+            self._parents = torch.cat((self._parents, torch.tensor(self.root_index).to(device))).to(device) # Adding the hands joints
+            head_length = 0.5
             self._offsets = torch.cat((self._offsets, torch.tensor([[[0, 0, head_length]]]).to(device)), dim = 1).to(device)
             self._local_rotation = torch.cat((self._local_rotation, torch.tensor([[[1, 0, 0, 0]]]).to(device)), dim = 1).to(device)
-            
         self.joints_range = mjcf_data['joints_range'][1:].to(device)
         self._local_rotation_mat = tRot.quaternion_to_matrix(self._local_rotation).float() # w, x, y ,z
         
@@ -119,7 +119,7 @@ class Stompy_Batch:
         }
 
         
-    def fk_batch(self, pose, trans, convert_to_mat=True, return_full = False, dt=1/30):
+    def fk_batch(self, pose, trans, convert_to_mat=True, return_full = False, dt=1/30, remove_extension=True):
         device, dtype = pose.device, pose.dtype
         pose_input = pose.clone()
         B, seq_len = pose.shape[:2]
@@ -150,10 +150,12 @@ class Stompy_Batch:
             return_dict.global_rotation_mat_extend = wbody_mat.clone()
             return_dict.global_rotation_extend = wbody_rot
             
-            wbody_pos = wbody_pos[..., :-self._remove_idx, :]
-            wbody_mat = wbody_mat[..., :-self._remove_idx, :, :]
-            wbody_rot = wbody_rot[..., :-self._remove_idx, :]
+            if remove_extension:
+                wbody_pos = wbody_pos[..., :-self._remove_idx, :]
+                wbody_mat = wbody_mat[..., :-self._remove_idx, :, :]
+                wbody_rot = wbody_rot[..., :-self._remove_idx, :]
         
+        # import pdb; pdb.set_trace()
         return_dict.global_translation = wbody_pos
         return_dict.global_rotation_mat = wbody_mat
         return_dict.global_rotation = wbody_rot
