@@ -94,5 +94,5 @@ for iteration in range(1000):
     loss.backward()
     optimizer_shape.step()
 
-
+import pdb; pdb.set_trace()
 joblib.dump((shape_new.detach().cpu(), scale.detach().cpu()), "data/stompy/shape_optimized_v1.pkl") # V2 has hip jointsrea

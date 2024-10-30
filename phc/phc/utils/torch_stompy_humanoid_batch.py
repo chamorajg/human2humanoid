@@ -60,10 +60,9 @@ class Stompy_Batch:
             self._remove_idx = 3
             self.model_names = self.model_names + ["head_link"]
             self._parents = torch.cat((self._parents, torch.tensor([0]).to(device))).to(device) # Adding the hands joints
-            head_length = 0.75
+            head_length = 0.5
             self._offsets = torch.cat((self._offsets, torch.tensor([[[0, 0, head_length]]]).to(device)), dim = 1).to(device)
             self._local_rotation = torch.cat((self._local_rotation, torch.tensor([[[1, 0, 0, 0]]]).to(device)), dim = 1).to(device)
-            
         self.joints_range = mjcf_data['joints_range'][1:].to(device)
         self._local_rotation_mat = tRot.quaternion_to_matrix(self._local_rotation).float() # w, x, y ,z
         
@@ -149,10 +148,11 @@ class Stompy_Batch:
             return_dict.global_rotation_mat_extend = wbody_mat.clone()
             return_dict.global_rotation_extend = wbody_rot
             
-            # wbody_pos = wbody_pos[..., :-self._remove_idx, :]
-            # wbody_mat = wbody_mat[..., :-self._remove_idx, :, :]
-            # wbody_rot = wbody_rot[..., :-self._remove_idx, :]
+            wbody_pos = wbody_pos[..., :-self._remove_idx, :]
+            wbody_mat = wbody_mat[..., :-self._remove_idx, :, :]
+            wbody_rot = wbody_rot[..., :-self._remove_idx, :]
         
+        # import pdb; pdb.set_trace()
         return_dict.global_translation = wbody_pos
         return_dict.global_rotation_mat = wbody_mat
         return_dict.global_rotation = wbody_rot

@@ -81,7 +81,7 @@ smpl_parser_n.to(device)
 amass_data = joblib.load('/home/kasm-user/PHC/sample_data/amass_copycat_take6_train.pkl') # From PHC
 shape_new, scale = joblib.load("data/stompy/shape_optimized_v1.pkl")
 shape_new = shape_new.to(device)
-
+STOMPY_TORSO_OFFSET = 0.06 # Needs to be fixed not variable. 
 
 
 stompy_fk = Stompy_Batch(device = device)
@@ -131,8 +131,7 @@ for data_key in pbar:
 
     root_trans_offset_dump = root_trans_offset.clone()
 
-    root_trans_offset_dump[..., 2] -= fk_return.global_translation[..., 2].min().item() - 0.08
-
+    root_trans_offset_dump[..., 2] -= fk_return.global_translation[..., 2].min().item() + STOMPY_TORSO_OFFSET
     data_dump[data_key]={
             "root_trans_offset": root_trans_offset_dump.squeeze().cpu().detach().numpy(),
             "pose_aa": pose_aa_stompy_new.squeeze().cpu().detach().numpy(),   
@@ -140,8 +139,7 @@ for data_key in pbar:
             "root_rot": sRot.from_rotvec(gt_root_rot.cpu().numpy()).as_quat(),
             }
     
-    if count == 10:
-        joblib.dump(data_dump, "data/stompy/amass_train.pkl")
     count += 1
 
 joblib.dump(data_dump, "data/stompy/amass_train.pkl")
+joblib.dump(data_dump, "legged_gym/resources/motions/stompy/amass_train.pkl")

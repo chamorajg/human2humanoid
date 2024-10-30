@@ -347,6 +347,8 @@ class MotionLibStompy(MotionLibBase):
 
         num_motions = self.num_motions()
         total_len = self.get_total_length()
+        min_value = min(self.gts_t[:, 5, 2].min().item(), self.gts_t[:, 14, 2].min().item())
+        self.gts_t[..., 2] -= min_value
         print(f"Loaded {num_motions:d} motions with a total length of {total_len:.3f}s and {self.gts.shape[0]} frames.")
         return motions
 
@@ -452,6 +454,7 @@ class MotionLibStompy(MotionLibBase):
             rb_rot[:, self.track_idx] = q_rb_rot
             body_vel[:, self.track_idx] = q_body_vel
             body_ang_vel[:, self.track_idx] = q_ang_vel
+        # rg_pos[..., 2] -= 0.3
         return_dict.update({
             "root_pos": rg_pos[..., 0, :].clone(),
             "root_rot": rb_rot[..., 0, :].clone(),

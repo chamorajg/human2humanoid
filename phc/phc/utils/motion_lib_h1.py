@@ -492,7 +492,7 @@ class MotionLibH1(MotionLibBase):
 
             trans = to_torch(curr_file['root_trans_offset']).clone()[start:end]
             pose_aa = to_torch(curr_file['pose_aa'][start:end]).clone()
-            dt = 1/curr_file['fps']
+            dt = 1/curr_file.get('fps', 30)
 
             B, J, N = pose_aa.shape
 
