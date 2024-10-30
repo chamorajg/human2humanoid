@@ -97,7 +97,7 @@ scales:
   # teleop_body_ang_vel : 8
 
 desired_feet_max_height_for_this_air : 0.15
-feet_height_target: 0.2
+feet_height_target: 0.15
 vrclose_threshold: 0.10
 ref_stable_velocity_threshold: 0.05
 only_positive_rewards : False # if true negative total rewards are clipped at zero (avoids early termination problems)
