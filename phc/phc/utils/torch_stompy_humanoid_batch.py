@@ -21,7 +21,6 @@ STOMPY_ROTATION_AXIS = torch.tensor([
        [ 0, 0, 1], # L_shoulder_z # yaw
        [ 1, 0, 0], # L_elbow_x # roll
        
-
        [ 0, 1, 0], # R_hip_y # pitch
        [ 1, 0, 0], # R_hip_x # roll
        [ 0, 0, 1], # R_hip_z # yaw
@@ -46,7 +45,7 @@ class Stompy_Batch:
         self.extend_head = extend_head
         if extend_hand:
             self.model_names = mjcf_data['node_names'] + ["left_hand_keypoint_link", "right_hand_keypoint_link"]
-            self._parents = torch.cat((mjcf_data['parent_indices'], torch.tensor([13, 17]))).to(device) # Adding the hands joints
+            self._parents = torch.cat((mjcf_data['parent_indices'], torch.tensor([9, 18]))).to(device) # Adding the hands joints
             arm_length = 0.3
             self._offsets = torch.cat((mjcf_data['local_translation'], torch.tensor([[arm_length, 0, 0], [arm_length, 0, 0]])), dim = 0)[None, ].to(device)
             self._local_rotation = torch.cat((mjcf_data['local_rotation'], torch.tensor([[1, 0, 0, 0], [1, 0, 0, 0]])), dim = 0)[None, ].to(device)
@@ -150,9 +149,9 @@ class Stompy_Batch:
             return_dict.global_rotation_mat_extend = wbody_mat.clone()
             return_dict.global_rotation_extend = wbody_rot
             
-            wbody_pos = wbody_pos[..., :-self._remove_idx, :]
-            wbody_mat = wbody_mat[..., :-self._remove_idx, :, :]
-            wbody_rot = wbody_rot[..., :-self._remove_idx, :]
+            # wbody_pos = wbody_pos[..., :-self._remove_idx, :]
+            # wbody_mat = wbody_mat[..., :-self._remove_idx, :, :]
+            # wbody_rot = wbody_rot[..., :-self._remove_idx, :]
         
         return_dict.global_translation = wbody_pos
         return_dict.global_rotation_mat = wbody_mat

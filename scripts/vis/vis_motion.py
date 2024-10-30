@@ -51,7 +51,7 @@ asset_descriptors = [
     AssetDesc(asset_urdf, False),
 ]
 sk_tree = SkeletonTree.from_mjcf(asset_xml)
-motion_file = "/home/kasm-user/human2humanoid/data/stompy/amass_train.pkl"
+motion_file = "/home/kasm-user/Downloads/human2humanoid/data/stompy/amass_train.pkl"
 
 # parse arguments
 args = gymutil.parse_arguments(description="Joint monkey: Animate degree-of-freedom ranges",
@@ -114,7 +114,7 @@ if viewer is None:
 
 # load asset
 # asset_root = "amp/data/assets"
-asset_root = "/home/kasm-user/human2humanoid"
+asset_root = "/home/kasm-user/Downloads/human2humanoid"
 asset_file = asset_descriptors[args.asset_id].file_name
 
 asset_options = gymapi.AssetOptions()
@@ -125,7 +125,6 @@ asset_options.use_mesh_materials = True
 
 print("Loading asset '%s' from '%s'" % (asset_file, asset_root))
 asset = gym.load_asset(sim, asset_root, asset_file, asset_options)
-print(asset)
 
 # set up the env grid
 num_envs = 1

@@ -18,7 +18,7 @@ num_envs : 4096
 # num_observations : 87 # v-teleop_extend_nolinvel
 # num_privileged_obs : 163 # v-teleop_extend_nolinvel
 
-num_observations : 534 # v-teleop-extend-max
+num_observations : 564 # v-teleop-extend-max
 num_privileged_obs : 631 #214 # v-teleop-extend-max
 
 

@@ -97,9 +97,11 @@ class StompyLeggedRobot(BaseTask):
 
         self.lower_body_indices = [0, 1, 2, 3, 4, 9, 10, 11, 12, 13]
         self.upper_body_indices = [5, 6, 7, 8, 14, 15, 16, 17]
+        self._arm_indices = [9, 18]
+
         if self.cfg.motion.teleop:
             # print(self._body_list)
-            self.extend_body_parent_ids = [9, 18]
+            self.extend_body_parent_ids = self._arm_indices
             self._track_bodies_id = [self._body_list.index(body_name) for body_name in self.cfg.motion.teleop_selected_keypoints_names]
             self._track_bodies_extend_id = self._track_bodies_id + [len(self._body_list), len(self._body_list) + 1]
             self.extend_body_pos = torch.tensor([[0.3, 0, 0], [0.3, 0, 0]]).repeat(self.num_envs, 1, 1).to(self.device)
@@ -231,9 +233,6 @@ class StompyLeggedRobot(BaseTask):
             
         if self.cfg.train.distill: # this needs to happen BEFORE the next time-step observation is computed, to collect the "current time-step target"
             self.extras['kin_dict'] = self.kin_dict
-        
-
-        
 
         # ===== UPDATE self.trajectories =====
         dof = self.dof_pos[:]
@@ -249,25 +248,10 @@ class StompyLeggedRobot(BaseTask):
         self.trajectories_with_linvel[:, 1 * 63 :] = self.trajectories_with_linvel[:, :-1 * 63].clone()
         self.trajectories_with_linvel[:, 0 * 63 : 1 * 63] = current_obs_a_with_linvel.clone()
         if self.cfg.train_velocity_estimation:
-
             velocity = self.base_lin_vel
-
-
             self.ready_for_train_indices = self.episode_length_buf > 25
-
-            # MLP
             train_input = self.trajectories[self.ready_for_train_indices]
-
-            # GRU
-            # Reshape A into the desired shape (num_envs, 25, 63)
-            # B_reshaped = train_input.reshape(train_input.shape[0], 25, 63)
             B_reshaped = train_input.reshape(train_input.shape[0], 25, 63)
-
-            # Transpose the reshaped array to match the desired rearrangement of axes
-            # B_transposed = B_reshaped.transpose(0, 2, 1)
-
-            # Assign the values of the transposed array back to B
-            # train_input = current_obs_a.unsqueeze(0).clone() # [batch_size, 63]
             train_input = torch.flip(B_reshaped,dims=[1])
             
 
@@ -294,10 +278,6 @@ class StompyLeggedRobot(BaseTask):
                 torch.save(self.velocity_estimator.state_dict(), load_path)
 
         return self.obs_buf, self.privileged_obs_buf, self.rew_buf, self.reset_buf, self.extras
-    
-
-
-
 
     def _refresh_sim_tensors(self):
 
@@ -497,14 +477,9 @@ class StompyLeggedRobot(BaseTask):
             if self.cfg.motion.curriculum:
                 self._update_teleop_curriculum(env_ids)
             self._resample_motion_times(env_ids) #need to resample before reset root states
-            # self._update_motion_reference()
-        
 
         self._reset_dofs(env_ids)
         self._reset_root_states(env_ids)
-        
-        
-
         
         self._episodic_domain_randomization(env_ids)
         #TODO: reset action filter for the env ids  ( n * 19 joint)
@@ -756,8 +731,6 @@ class StompyLeggedRobot(BaseTask):
                                     self.actions
                                     ),dim=-1)
         
-
-        
         obs_buf_denoise = obs.clone()
         
         # add noise if needed
@@ -866,7 +839,6 @@ class StompyLeggedRobot(BaseTask):
             points = (quat_apply_yaw(self.base_quat[env_ids].repeat(1, self.num_height_points), self.height_points[env_ids]) + position.view(self.num_envs, -1, 3))
         else:
             points = (quat_apply_yaw(self.base_quat.repeat(1, self.num_height_points), self.height_points) + (position).view(self.num_envs, -1, 3)) 
-
 
         points += self.terrain.cfg.border_size
         points = (points / self.terrain.cfg.horizontal_scale).long()
@@ -1111,7 +1083,6 @@ class StompyLeggedRobot(BaseTask):
             offset = self.env_origins + self.env_origins_init_3Doffset
 
             motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
-            print(motion_res['dof_pos'].shape)
             self.dof_pos[env_ids] = motion_res['dof_pos'][env_ids]
             self.dof_vel[env_ids] = motion_res['dof_vel'][env_ids]
             
@@ -1145,7 +1116,7 @@ class StompyLeggedRobot(BaseTask):
                 motion_times = (self.episode_length_buf) * self.dt + self.motion_start_times # next frames so +1
                 offset = self.env_origins + self.env_origins_init_3Doffset
                 motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
-                
+                # import pdb; pdb.set_trace()
                 self.root_states[env_ids, :3] = motion_res['root_pos'][env_ids]
                 self.root_states[env_ids, 2] += 0.04 # in case under the terrain
 
@@ -1183,7 +1154,7 @@ class StompyLeggedRobot(BaseTask):
                 # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset= offset)
                 motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
                 
-                
+                # import pdb; pdb.set_trace()
                 self.root_states[env_ids, :3] = motion_res['root_pos'][env_ids]
                 self.root_states[env_ids, 3:7] = motion_res['root_rot'][env_ids]
                 self.root_states[env_ids, 7:10] = motion_res['root_vel'][env_ids] # ZL: use random velicty initation should be more robust? 
@@ -1198,18 +1169,9 @@ class StompyLeggedRobot(BaseTask):
                 self.root_states[env_ids, :3] += self.env_origins[env_ids]
                 self.root_states[env_ids, 7:13].uniform_(-0.5, 0.5) # random base twist
             
-        # base velocities
-        
-        # import pdb; pdb.set_trace()
-        # if self.cfg.motion.teleop:
-        #     assert len(env_ids) != 0
-        #     self.root_states[env_ids, 3:7] += self.ref_base_rot_init[env_ids]
-        # self.root_states[env_ids, 7:10] = torch_rand_float(-self.cfg.init_state.max_linvel, self.cfg.init_state.max_linvel, (len(env_ids), 3), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
-        # self.root_states[env_ids, 10:13] = torch_rand_float(-self.cfg.init_state.max_angvel, self.cfg.init_state.max_angvel, (len(env_ids), 3), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
         env_ids_int32 = env_ids.to(dtype=torch.int32)
         
         
-        # env_ids_int32 = torch.arange(self.num_envs).to(dtype=torch.int32).cuda()
         env_ids_int32 = torch.arange(self.num_envs).to(dtype=torch.int32).to(self.device)
         self.gym.set_dof_state_tensor_indexed(self.sim,
                                               gymtorch.unwrap_tensor(self.dof_state),
@@ -1302,8 +1264,6 @@ class StompyLeggedRobot(BaseTask):
             self.cfg.domain_rand.born_distance *= (1 - self.cfg.domain_rand.level_degree)
         elif self.average_episode_length > self.cfg.domain_rand.born_offset_level_up_threshold:
             self.cfg.domain_rand.born_distance *= (1 + self.cfg.domain_rand.level_degree)
-        # import ipdb; ipdb.set_trace()
-        # torch.clamp(randomize_distance,self.cfg.domain_rand.born_offset_range[0], self.cfg.domain_rand.born_offset_range[1])
         self.cfg.domain_rand.born_distance = np.clip(self.cfg.domain_rand.born_distance, self.cfg.domain_rand.born_offset_range[0], self.cfg.domain_rand.born_offset_range[1])
     
     def _update_born_heading_curriculum(self):
@@ -1311,8 +1271,6 @@ class StompyLeggedRobot(BaseTask):
             self.cfg.domain_rand.born_heading_degree *= (1 - self.cfg.domain_rand.born_heading_level_degree)
         elif self.average_episode_length > self.cfg.domain_rand.born_heading_level_up_threshold:
             self.cfg.domain_rand.born_heading_degree *= (1 + self.cfg.domain_rand.born_heading_level_degree)
-        # import ipdb; ipdb.set_trace()
-        # torch.clamp(randomize_distance,self.cfg.domain_rand.born_offset_range[0], self.cfg.domain_rand.born_offset_range[1])
         self.cfg.domain_rand.born_heading_degree = np.clip(self.cfg.domain_rand.born_heading_degree, self.cfg.domain_rand.born_heading_range[0], self.cfg.domain_rand.born_heading_range[1])
     
     def _update_teleop_curriculum(self, env_ids):
@@ -1355,13 +1313,6 @@ class StompyLeggedRobot(BaseTask):
         noise_scales = self.cfg.noise.noise_scales
         noise_level = self.cfg.noise.noise_level
         if self.cfg.motion.teleop:
-            # noise_vec[0:3] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-            # noise_vec[3:6] = noise_scales.gravity * noise_level
-            # noise_vec[6                       :   6+  self.num_actions] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-            # noise_vec[6+  self.num_actions    :   6+2*self.num_actions] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-            # noise_vec[6+2*self.num_actions    :   6+3*self.num_actions] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-            # noise_vec[6+3*self.num_actions    :   6+4*self.num_actions] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel 
-            # noise_vec[6+4*self.num_actions    :                       ] = 0. # previous actions, commands
             if self.cfg.motion.teleop_obs_version == 'v-teleop-extend-max-full':
                 max_num_bodies = len(self.cfg.motion.teleop_selected_keypoints_names) + 3
                 curr_obs_len = 0
@@ -1399,13 +1350,6 @@ class StompyLeggedRobot(BaseTask):
             else:
                 raise NotImplementedError
         else:
-            # noise_vec[0:3] = noise_scales.lin_vel * noise_level * self.obs_scales.lin_vel
-            # noise_vec[3:6] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-            # noise_vec[6:9] = noise_scales.gravity * noise_level
-            # noise_vec[9:12] = 0.                                             # commands
-            # noise_vec[12                       :   12+  self.num_actions] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-            # noise_vec[12+  self.num_actions    :   12+2*self.num_actions] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-            # noise_vec[12+2*self.num_actions    :                       ] = 0. # previous actions
             noise_vec[0:3] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
             noise_vec[3:6] = noise_scales.gravity * noise_level
             noise_vec[6:9] = 0.01                                             # commands
@@ -1463,16 +1407,7 @@ class StompyLeggedRobot(BaseTask):
         
 
         # create some wrapper tensors for different slices
-        # self.root_states = gymtorch.wrap_tensor(actor_root_state)
         self.root_states = gymtorch.wrap_tensor(actor_root_state)
-        
-        # if (not self.headless) and self.cfg.motion.visualize and self.cfg.motion.teleop:
-        #     self.root_states = self.root_states_all[0::(self._num_teleop_markers+1)]
-        #     self.marker_states = [self.root_states_all[marker_i::(self._num_teleop_markers + 1)] for marker_i in range(1,self._num_teleop_markers + 1)]
-        #     # self.root_states = self.root_states_all[0::(self.cfg.motion.num_markers+1)]
-        #     # self.marker_states = [self.root_states_all[marker_i::(self.cfg.motion.num_markers + 1)] for marker_i in range(1,self.cfg.motion.num_markers + 1)]
-        # else:
-        #     self.root_states = self.root_states_all
             
         self.dof_state = gymtorch.wrap_tensor(dof_state_tensor)
         self.dof_pos = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 0]
@@ -1486,11 +1421,6 @@ class StompyLeggedRobot(BaseTask):
         self._rigid_body_state = gymtorch.wrap_tensor(rigid_body_state)
         bodies_per_env = self._rigid_body_state.shape[0] // self.num_envs
         self._rigid_body_state_reshaped = self._rigid_body_state.view(self.num_envs, bodies_per_env, 13)
-        
-        # self._rigid_body_pos = self._rigid_body_state_reshaped[..., 1:self.num_bodies, 0:3]
-        # self._rigid_body_rot = self._rigid_body_state_reshaped[..., 1:self.num_bodies, 3:7]
-        # self._rigid_body_vel = self._rigid_body_state_reshaped[..., 1:self.num_bodies, 7:10]
-        # self._rigid_body_ang_vel = self._rigid_body_state_reshaped[..., 1:self.num_bodies, 10:13]
         
         self._rigid_body_pos = self._rigid_body_state_reshaped[..., :self.num_bodies, 0:3]
         self._rigid_body_rot = self._rigid_body_state_reshaped[..., :self.num_bodies, 3:7]
@@ -1521,7 +1451,6 @@ class StompyLeggedRobot(BaseTask):
         self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
         self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
 
-        # import ipdb; ipdb.set_trace()
         if self.cfg.terrain.measure_heights:
            self.height_points = self._init_height_points()
         self.measured_heights = 0
@@ -1574,7 +1503,6 @@ class StompyLeggedRobot(BaseTask):
 
             env_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
             self._resample_motion_times(env_ids) #need to resample before reset root states
-            # self._update_motion_reference()
             self.forward_vec = to_torch([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
             
             if self.cfg.motion.curriculum:
@@ -1665,7 +1593,6 @@ class StompyLeggedRobot(BaseTask):
         robot_asset = self.gym.load_asset(self.sim, asset_root, asset_file, asset_options)
         self.num_dof = self.gym.get_asset_dof_count(robot_asset)
         self.num_bodies = self.gym.get_asset_rigid_body_count(robot_asset)
-        # print(self.num_dof, self.num_bodies)
         dof_props_asset = self.gym.get_asset_dof_properties(robot_asset)
         dof_props_asset["driveMode"] = gymapi.DOF_MODE_EFFORT
         
@@ -1676,9 +1603,7 @@ class StompyLeggedRobot(BaseTask):
         # save body names from the asset
         body_names = self.gym.get_asset_rigid_body_names(robot_asset)
         self.dof_names = self.gym.get_asset_dof_names(robot_asset)
-        # print(body_names)
-        # print(self.dof_names)
-        # import pdb; pdb.set_trace()
+        
         self.num_bodies = len(body_names)
         self.num_dofs = len(self.dof_names)
         feet_names = [s for s in body_names if self.cfg.asset.foot_name in s]
@@ -1688,7 +1613,7 @@ class StompyLeggedRobot(BaseTask):
         termination_contact_names = []
         for name in self.cfg.asset.terminate_after_contacts_on:
             termination_contact_names.extend([s for s in body_names if name in s])
-        # import ipdb; ipdb.set_trace()
+        
         base_init_state_list = self.cfg.init_state.pos + self.cfg.init_state.rot + self.cfg.init_state.lin_vel + self.cfg.init_state.ang_vel
 
         self.base_init_state = to_torch(base_init_state_list, device=self.device, requires_grad=False)
@@ -1721,10 +1646,6 @@ class StompyLeggedRobot(BaseTask):
             actor_handle = self.gym.create_actor(env_handle, robot_asset, start_pose, self.cfg.asset.name, i, self.cfg.asset.self_collisions, 0)
             self._body_list = self.gym.get_actor_rigid_body_names(env_handle, actor_handle)
             dof_props = self._process_dof_props(dof_props_asset, i)
-            # if self.cfg.asset.set_dof_properties:
-                # dof_props['stiffness'] = self.cfg.asset.default_dof_prop_stiffness
-                # dof_props['damping'] = self.cfg.asset.default_dof_prop_damping
-                # dof_props['friction'] = self.cfg.asset.default_dof_prop_friction
             self.gym.set_actor_dof_properties(env_handle, actor_handle, dof_props)
             body_props = self.gym.get_actor_rigid_body_properties(env_handle, actor_handle)
             body_props = self._process_rigid_body_props(body_props, i)
@@ -1734,7 +1655,6 @@ class StompyLeggedRobot(BaseTask):
             
             if (not self.headless) and self.cfg.motion.visualize and self.cfg.motion.teleop:
                 assert self.cfg.motion.num_markers == self.num_dofs, "we visualize all joints"
-                # self.marker_handles.append(list())
                 
                 for marker_i in range(self.cfg.motion.num_markers):
                     start_pose_obj = gymapi.Transform()
@@ -1799,7 +1719,6 @@ class StompyLeggedRobot(BaseTask):
             self.cfg.terrain.curriculum = False
 
         self.max_episode_length_s = self.cfg.env.episode_length_s
-        # import pdb; pdb.set_trace()
         self.max_episode_length = np.ceil(self.max_episode_length_s / self.dt)
 
         self.cfg.domain_rand.push_interval = np.ceil(self.cfg.domain_rand.push_interval_s / self.dt)
@@ -1811,7 +1730,6 @@ class StompyLeggedRobot(BaseTask):
         motion_path = self.cfg.motion.motion_file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
         skeleton_path = self.cfg.motion.skeleton_file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
         self._motion_lib = MotionLibStompy(motion_file=motion_path, device=self.device, masterfoot_conifg=None, fix_height=False,multi_thread=False,mjcf_file=skeleton_path, extend_head=self.cfg.motion.extend_head) #multi_thread=True doesn't work
-        # self._motion_lib = MotionLibH1(motion_file=motion_path, device=self.device, masterfoot_conifg=None, fix_height=False,multi_thread=False,mjcf_file=skeleton_path, extend_head=self.cfg.motion.extend_head) #multi_thread=True doesn't work
         sk_tree = SkeletonTree.from_mjcf(skeleton_path)
         
         self.skeleton_trees = [sk_tree] * self.num_envs
@@ -1836,19 +1754,14 @@ class StompyLeggedRobot(BaseTask):
     def _resample_motion_times(self, env_ids):
         if len(env_ids) == 0:
             return
-        # self.motion_ids[env_ids] = self._motion_lib.sample_motions(len(env_ids))
-        # self.motion_ids[env_ids] = torch.randint(0, self._motion_lib._num_unique_motions, (len(env_ids),), device=self.device)
-        # print(self.motion_ids[:10])
         self.motion_len[env_ids] = self._motion_lib.get_motion_length(self.motion_ids[env_ids])
-        # self.env_origins_init_3Doffset[env_ids, :2] = torch_rand_float(-1., 1., (len(env_ids), 2), device=self.device) # xy position within 1m of the center
         if self.cfg.env.test:
             self.motion_start_times[env_ids] = 0
         else:
             self.motion_start_times[env_ids] = self._motion_lib.sample_time(self.motion_ids[env_ids])
-        # self.motion_start_times[env_ids] = self._motion_lib.sample_time(self.motion_ids[env_ids])
+        
         offset=(self.env_origins + self.env_origins_init_3Doffset)
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset= offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
         
         self.ref_base_pos_init[env_ids] = motion_res["root_pos"][env_ids]
@@ -1859,24 +1772,21 @@ class StompyLeggedRobot(BaseTask):
         
     def _get_state_from_motionlib_cache(self, motion_ids, motion_times, offset=None):
         ## Cache the motion + offset
-        # import ipdb; ipdb.set_trace()
         if offset is None  or not "motion_ids" in self.ref_motion_cache or self.ref_motion_cache['offset'] is None or len(self.ref_motion_cache['motion_ids']) != len(motion_ids) or len(self.ref_motion_cache['offset']) != len(offset) \
             or  (self.ref_motion_cache['motion_ids'] - motion_ids).abs().sum() + (self.ref_motion_cache['motion_times'] - motion_times).abs().sum() + (self.ref_motion_cache['offset'] - offset).abs().sum() > 0 :
-            # import ipdb; ipdb.set_trace()
             self.ref_motion_cache['motion_ids'] = motion_ids.clone()  # need to clone; otherwise will be overriden
             self.ref_motion_cache['motion_times'] = motion_times.clone()  # need to clone; otherwise will be overriden
             self.ref_motion_cache['offset'] = offset.clone() if not offset is None else None
         else:
             return self.ref_motion_cache
         motion_res = self._motion_lib.get_motion_state(motion_ids, motion_times, offset=offset)
-        # import ipdb; ipdb.set_trace()
+        motion_res['rg_pos'][..., 2] -= motion_res['rg_pos'][..., 2].min().item()
         self.ref_motion_cache.update(motion_res)
 
         return self.ref_motion_cache
     
     def _get_state_from_motionlib_cache_trimesh(self, motion_ids, motion_times, offset=None):
         ## Cache the motion + offset
-        # import ipdb; ipdb.set_trace()
         if offset is None  or not "motion_ids" in self.ref_motion_cache or self.ref_motion_cache['offset'] is None or len(self.ref_motion_cache['motion_ids']) != len(motion_ids) or len(self.ref_motion_cache['offset']) != len(offset) \
             or  (self.ref_motion_cache['motion_ids'] - motion_ids).abs().sum() + (self.ref_motion_cache['motion_times'] - motion_times).abs().sum() + (self.ref_motion_cache['offset'] - offset).abs().sum() > 0 :
             self.ref_motion_cache['motion_ids'] = motion_ids.clone()  # need to clone; otherwise will be overriden
@@ -1885,36 +1795,20 @@ class StompyLeggedRobot(BaseTask):
         else:
             return self.ref_motion_cache
         motion_res = self._motion_lib.get_motion_state(motion_ids, motion_times, offset=offset)
+        motion_res['rg_pos'][..., 2] -= motion_res['rg_pos'][..., 2].min().item() # Make the motion grounded. Atleast one frame from the video should have a body part touching the ground.
 
-        # import ipdb; ipdb.set_trace()
-        # self.root_states[:,:2] = motion_res['root_pos'][:, :2]
         if self.cfg.terrain.measure_heights:
             self.measured_heights = self._get_heights(position=motion_res['root_pos'][:, :3]).flatten()
             delta_height = self.measured_heights[:] - offset[:, 2]
-            # self.root_states[:, 2] += delta_height
             motion_res['root_pos'][:, 2] += delta_height
-            # import ipdb; ipdb.set_trace()
             if "rg_pos" in motion_res:
                 motion_res['rg_pos'][:, :, 2] += delta_height.unsqueeze(1)
             if "rg_pos_t" in motion_res:
-                motion_res['rg_pos_t'][:, :, 2] += delta_height.unsqueeze(1)
+                motion_res['rg_pos_t'][:, :, 2] += delta_height.unsqueeze(1) # rg_pos_t is not being used anywhere for stompy. verify and remove
 
         self.ref_motion_cache.update(motion_res)
 
         return self.ref_motion_cache
-
-        
-    # def _update_motion_reference(self,):
-    #     motion_res = self._motion_lib.get_motion_state(self.motion_ids, self.motion_times)
-    #     self.ref_body_pos = motion_res["rg_pos"] + self.env_origins[:, None] + self.env_origins_init_3Doffset[:, None]
-    #     ref_body_pos_extend = motion_res["rg_pos_t"] + self.env_origins[:, None] + self.env_origins_init_3Doffset[:, None]
-    #     ref_body_vel = motion_res["body_vel"] # [num_envs, num_markers, 3]
-    #     ref_body_vel_extend = motion_res["body_vel_t"] # [num_envs, num_markers, 3]
-    #     ref_body_rot = motion_res["rb_rot"] # [num_envs, num_markers, 4]
-    #     ref_body_ang_vel = motion_res["body_ang_vel"] # [num_envs, num_markers, 3]
-    #     ref_joint_pos = motion_res["dof_pos"] # [num_envs, num_dofs]
-    #     ref_joint_vel = motion_res["dof_vel"] # [num_envs, num_dofs]
-    #     self.marker_coords[:] = motion_res["rg_pos"][:, 1:,] + self.env_origins[:, None] + self.env_origins_init_3Doffset[:, None]
         
         
     def _load_marker_asset(self):
@@ -1946,9 +1840,7 @@ class StompyLeggedRobot(BaseTask):
     def knee_distance(self):
         left_knee_pos = self._get_rigid_body_pos("L_thigh")
         right_knee_pos = self._get_rigid_body_pos("R_thigh")
-        # print(f"left knee pos: {left_knee_pos}")
         dist_knee = torch.norm(left_knee_pos - right_knee_pos, dim=-1, keepdim=True)
-        # print("dist knee shape", dist_knee.shape)
         return dist_knee
   
     @property
@@ -1965,7 +1857,6 @@ class StompyLeggedRobot(BaseTask):
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
         ref_body_pos = motion_res['root_pos']
         last_dis = ref_body_pos[:, 0:2] - self.last_root_pos[:, 0:2]
-        # import ipdb; ipdb.set_trace()
         last_dis_norm = torch.norm(last_dis, dim=1)
         current_dis = ref_body_pos[:, 0:2] - self.root_states[:, 0:2]
         current_dis_norm = torch.norm(current_dis, dim=1)
@@ -1978,7 +1869,6 @@ class StompyLeggedRobot(BaseTask):
         first_foot_contact = contact_filt[:,0]
         second_foot_contact = contact_filt[:,1]
         reward = ~(first_foot_contact | second_foot_contact)
-        # import ipdb; ipdb.set_trace()
         return reward
     
 
@@ -2028,7 +1918,6 @@ class StompyLeggedRobot(BaseTask):
         
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
         ref_body_pos_extend = motion_res['rg_pos_t']
         ref_body_vel = motion_res['body_vel']
@@ -2049,14 +1938,10 @@ class StompyLeggedRobot(BaseTask):
         contact_filt = torch.logical_or(contact, self.last_contacts) 
         first_foot_contact = contact_filt[:,0]
         second_foot_contact = contact_filt[:,1]
-        both_feet_contact = first_foot_contact & second_foot_contact
-        # not_both_feet_contact = ~both_feet_contact
-
-        
+        both_feet_contact = first_foot_contact & second_foot_contact        
 
         reward = close_enough & both_feet_contact
         reward *= torch.norm(ref_body_vel[:, 0, :2], dim=1) < self.cfg.rewards.ref_stable_velocity_threshold #no reward for low ref motion velocity (root xy velocity)
-        # import ipdb; ipdb.set_trace()
         return reward
 
     
@@ -2334,7 +2219,7 @@ class StompyLeggedRobot(BaseTask):
         
         if self.cfg.asset.local_upper_reward:
             diff =  ref_body_pos_extend[:, [0]] - body_pos[:, [0]]
-            ref_body_pos_extend[:, slf.upper_body_indices] -= diff
+            ref_body_pos_extend[:, self.upper_body_indices] -= diff
         
         extend_curr_pos = torch_utils.my_quat_rotate(body_rot[:, self.extend_body_parent_ids].reshape(-1, 4), self.extend_body_pos[:, ].reshape(-1, 3)).view(self.num_envs, -1, 3) + body_pos[:, self.extend_body_parent_ids]
         body_pos_extend = torch.cat([body_pos, extend_curr_pos], dim=1)
@@ -2362,7 +2247,6 @@ class StompyLeggedRobot(BaseTask):
         
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
         ref_body_pos_extend = motion_res['rg_pos_t']
         
@@ -2391,7 +2275,6 @@ class StompyLeggedRobot(BaseTask):
         
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
         ref_body_pos_extend = motion_res['rg_pos_t']
         
@@ -2420,7 +2303,6 @@ class StompyLeggedRobot(BaseTask):
         
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
         ref_body_pos_extend = motion_res['rg_pos_t']
         
@@ -2449,7 +2331,6 @@ class StompyLeggedRobot(BaseTask):
         
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
         ref_body_pos_extend = motion_res['rg_pos_t']
         
@@ -2476,7 +2357,6 @@ class StompyLeggedRobot(BaseTask):
         
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
         ref_body_pos_extend = motion_res['rg_pos_t']
         
@@ -2495,7 +2375,6 @@ class StompyLeggedRobot(BaseTask):
 
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
         ref_body_rot = motion_res['rb_rot']
 
@@ -2511,7 +2390,6 @@ class StompyLeggedRobot(BaseTask):
 
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
         ref_body_rot = motion_res['rb_rot']
 
@@ -2528,7 +2406,6 @@ class StompyLeggedRobot(BaseTask):
 
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
         ref_body_rot = motion_res['rb_rot']
         diff_global_body_rot = torch_utils.quat_mul(ref_body_rot, torch_utils.quat_conjugate(body_rot))
@@ -2554,7 +2431,6 @@ class StompyLeggedRobot(BaseTask):
 
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
 
         ref_body_vel = motion_res['body_vel']
@@ -2570,7 +2446,6 @@ class StompyLeggedRobot(BaseTask):
 
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
 
         ref_body_vel = motion_res['body_vel']
@@ -2587,7 +2462,6 @@ class StompyLeggedRobot(BaseTask):
 
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
 
         ref_body_vel = motion_res['body_vel']
@@ -2617,7 +2491,6 @@ class StompyLeggedRobot(BaseTask):
 
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
 
         ref_body_ang_vel = motion_res['body_ang_vel']
@@ -2632,7 +2505,6 @@ class StompyLeggedRobot(BaseTask):
 
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
 
         ref_body_ang_vel = motion_res['body_ang_vel']
@@ -2649,12 +2521,9 @@ class StompyLeggedRobot(BaseTask):
 
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
 
         ref_body_ang_vel = motion_res['body_ang_vel']
-
-
         diff_global_ang_vel = ref_body_ang_vel - body_ang_vel
         diff_global_ang_vel = diff_global_ang_vel[:, self.upper_body_indices] # upper
         diff_global_ang_vel_dist = (diff_global_ang_vel**2).mean(dim=-1).mean(dim=-1)
@@ -2679,9 +2548,7 @@ class StompyLeggedRobot(BaseTask):
         from_air_to_contact = torch.logical_and(contact_filt, ~self.last_contacts_filt)
         self.last_contacts = contact
         self.last_contacts_filt = contact_filt
-
         self.feet_air_max_height = torch.max(self.feet_air_max_height, self._rigid_body_pos[:, self.feet_indices, 2])
-        
         rew_feet_max_height = torch.sum((torch.clamp_min(self.cfg.rewards.desired_feet_max_height_for_this_air - self.feet_air_max_height, 0)) * from_air_to_contact, dim=1) # reward only on first contact with the ground
         self.feet_air_max_height *= ~contact_filt
         return rew_feet_max_height
@@ -2704,12 +2571,9 @@ class StompyLeggedRobot(BaseTask):
         # Need to filter the contacts because the contact reporting of PhysX is unreliable on meshes
         offset = self.env_origins + self.env_origins_init_3Doffset
         motion_times = (self.episode_length_buf ) * self.dt + self.motion_start_times # next frames so +1
-        # motion_res = self._get_state_from_motionlib_cache(self.motion_ids, motion_times, offset=offset)
         motion_res = self._get_state_from_motionlib_cache_trimesh(self.motion_ids, motion_times, offset= offset)
 
         ref_body_vel = motion_res['body_vel']
-        
-        
         contact = self.contact_forces[:, self.feet_indices, 2] > 1.
         contact_filt = torch.logical_or(contact, self.last_contacts) 
         self.last_contacts = contact
@@ -2758,7 +2622,6 @@ class StompyLeggedRobot(BaseTask):
     def render(self, sync_frame_time=False):
         # if self.viewer:
             # self._update_camera()
-
         super().render(sync_frame_time)
         return
     
@@ -2775,16 +2638,11 @@ class StompyLeggedRobot(BaseTask):
     def _update_camera(self):
         self.gym.refresh_actor_root_state_tensor(self.sim)
         char_root_pos = self.root_states[0, 0:3].cpu().numpy()
-
         cam_trans = self.gym.get_viewer_camera_transform(self.viewer, None)
-
         cam_pos = np.array([cam_trans.p.x, cam_trans.p.y, cam_trans.p.z])
         cam_delta = cam_pos - self._cam_prev_char_pos
-
         new_cam_target = gymapi.Vec3(char_root_pos[0], char_root_pos[1], 1.0)
         new_cam_pos = gymapi.Vec3(char_root_pos[0] + cam_delta[0], char_root_pos[1] + cam_delta[1], cam_pos[2])
-
-        # self.gym.set_camera_location(self.recorder_camera_handle, self.envs[0], new_cam_pos, new_cam_target)
 
         if self.viewer:
             self.gym.viewer_camera_look_at(self.viewer, None, new_cam_pos, new_cam_target)
@@ -2879,19 +2737,11 @@ def compute_imitation_observations_teleop(root_pos, root_rot, root_vel, body_pos
     heading_rot = torch_utils.calc_heading_quat(root_rot)
     heading_inv_rot_expand = heading_inv_rot.unsqueeze(-2).repeat((1, body_pos.shape[1], 1)).repeat_interleave(time_steps, 0)
     heading_rot_expand = heading_rot.unsqueeze(-2).repeat((1, body_pos.shape[1], 1)).repeat_interleave(time_steps, 0)
-    
-
 
     # ##### body pos + Dof_pos This part will have proper futuers.
     local_ref_body_pos = ref_body_pos.view(B, time_steps, J, 3) - root_pos.view(B, 1, 1, 3)  # preserves the body position
     local_ref_body_pos = torch_utils.my_quat_rotate(heading_inv_rot_expand.view(-1, 4), local_ref_body_pos.view(-1, 3))
-    # local_ref_body_vel = ref_body_vel.view(B, time_steps, J, 3) 
-    # local_ref_body_vel = torch_utils.my_quat_rotate(heading_inv_rot_expand.view(-1, 4), local_ref_body_vel.view(-1, 3))
-
-
     obs.append(local_ref_body_pos.view(B, time_steps, -1))  # timestep  * J * 3
-
-    # print(obs[0].shape, obs[1].shape, obs[2].shape, obs[3].shape, obs[4].shape, obs[5].shape, obs[6].shape, obs[7].shape)
     obs = torch.cat(obs, dim=-1).view(B, -1)
     return obs
 
@@ -2931,9 +2781,7 @@ def compute_imitation_observations_teleop_max(root_pos, root_rot, body_pos,   re
     obs.append(local_ref_body_pos.view(B, time_steps, -1))  # timestep  * J * 3
     if ref_vel_in_task_obs:
         obs.append(local_ref_body_vel.view(B, time_steps, -1))  # timestep  * J * 3
-
     obs = torch.cat(obs, dim=-1).view(B, -1)
-    
     return obs
 
 # @torch.jit.script
@@ -2954,7 +2802,6 @@ def compute_imitation_observations_teleop_max_heading(root_pos, root_rot, body_p
     # diff_local_heading_rot_flat = torch_utils.quat_to_tan_norm(torch_utils.calc_heading_quat(diff_local_body_rot_flat))
     diff_local_heading_rot_flat = torch_utils.calc_heading(diff_local_body_rot_flat)
     
-    
     ##### Body position and rotation differences
     diff_global_body_pos = ref_body_pos.view(B, time_steps, J, 3) - body_pos.view(B, 1, J, 3)
     diff_local_body_pos_flat = torch_utils.my_quat_rotate(heading_inv_rot_expand.view(-1, 4), diff_global_body_pos.view(-1, 3)) # 
@@ -2962,17 +2809,14 @@ def compute_imitation_observations_teleop_max_heading(root_pos, root_rot, body_p
     ##### body pos + Dof_pos This part will have proper futuers.
     local_ref_body_pos = ref_body_pos.view(B, time_steps, J, 3) - root_pos.view(B, 1, 1, 3)  # preserves the body position
     local_ref_body_pos = torch_utils.my_quat_rotate(heading_inv_rot_expand.view(-1, 4), local_ref_body_pos.view(-1, 3))
-    
     local_ref_body_vel = torch_utils.my_quat_rotate(heading_inv_rot_expand.view(-1, 4), ref_body_vel.view(-1, 3))
 
     if ref_episodic_offset is not None:
         # import ipdb; ipdb.set_trace()
         diff_global_body_pos_offset= ref_episodic_offset.unsqueeze(1).unsqueeze(2).expand(-1, 1, J, -1)
-        # diff_local_body_pos_flat = diff_local_body_pos_flat.view(B, 1, J, 3) + diff_global_body_pos_offset.view(-1, 3)
         diff_local_body_pos_flat = diff_local_body_pos_flat.view(B, 1, J, 3) + diff_global_body_pos_offset
         local_ref_body_pos_offset = ref_episodic_offset.repeat(J,1)[:J * ref_episodic_offset.shape[0], :]
         local_ref_body_pos[2::3] += local_ref_body_pos_offset.repeat_interleave(time_steps, 0)[2::3]
-        # local_ref_body_pos += local_ref_body_pos_offset.repeat_interleave(time_steps, 0)
 
     # make some changes to how futures are appended.
     obs.append(diff_local_body_pos_flat.view(B, time_steps, -1))  # 1 * timestep * J * 3
@@ -2982,7 +2826,6 @@ def compute_imitation_observations_teleop_max_heading(root_pos, root_rot, body_p
         obs.append(local_ref_body_vel.view(B, time_steps, -1))  # timestep  * J * 3
 
     obs = torch.cat(obs, dim=-1).view(B, -1)
-    
     return obs
 
 
@@ -3075,8 +2918,6 @@ def compute_humanoid_observations_max_full(body_pos, body_rot, body_vel, body_an
     flat_local_body_ang_vel = torch_utils.my_quat_rotate(flat_heading_rot_inv, flat_body_ang_vel)
     local_body_ang_vel = flat_local_body_ang_vel.reshape(body_ang_vel.shape[0], body_ang_vel.shape[1] * body_ang_vel.shape[2])
 
-    
-
     obs_list = []
     if root_height_obs:
         obs_list.append(root_h_obs)
@@ -3096,13 +2937,11 @@ def compute_imitation_observations_max_full(root_pos, root_rot, body_pos, body_r
     obs = []
     B, J, _ = body_pos.shape
 
-
     heading_inv_rot = torch_utils.calc_heading_quat_inv(root_rot)
     heading_rot = torch_utils.calc_heading_quat(root_rot)
     heading_inv_rot_expand = heading_inv_rot.unsqueeze(-2).repeat((1, J, 1)).repeat_interleave(time_steps, 0)
     heading_rot_expand = heading_rot.unsqueeze(-2).repeat((1, J, 1)).repeat_interleave(time_steps, 0)
     
-
     ##### Body position and rotation differences
     diff_global_body_pos = ref_body_pos.view(B, time_steps, J, 3) - body_pos.view(B, 1, J, 3)
     diff_local_body_pos_flat = torch_utils.my_quat_rotate(heading_inv_rot_expand.view(-1, 4), diff_global_body_pos.view(-1, 3))
@@ -3113,11 +2952,9 @@ def compute_imitation_observations_max_full(root_pos, root_rot, body_pos, body_r
     ##### linear and angular  Velocity differences
     diff_global_vel = ref_body_vel.view(B, time_steps, J, 3) - body_vel.view(B, 1, J, 3)
     diff_local_vel = torch_utils.my_quat_rotate(heading_inv_rot_expand.view(-1, 4), diff_global_vel.view(-1, 3))
-
-
+    
     diff_global_ang_vel = ref_body_ang_vel.view(B, time_steps, J, 3) - body_ang_vel.view(B, 1, J, 3)
     diff_local_ang_vel = torch_utils.my_quat_rotate(heading_inv_rot_expand.view(-1, 4), diff_global_ang_vel.view(-1, 3))
-    
 
     ##### body pos + Dof_pos This part will have proper futuers.
     local_ref_body_pos = ref_body_pos.view(B, time_steps, J, 3) - root_pos.view(B, 1, 1, 3)  # preserves the body position
@@ -3127,7 +2964,6 @@ def compute_imitation_observations_max_full(root_pos, root_rot, body_pos, body_r
     local_ref_body_rot = torch_utils.quat_to_tan_norm(local_ref_body_rot)
 
     if ref_episodic_offset is not None:
-        # import ipdb; ipdb.set_trace()
         diff_global_body_pos_offset= ref_episodic_offset.unsqueeze(1).unsqueeze(2).expand(-1, 1, J, -1)
         diff_local_body_pos_flat = diff_local_body_pos_flat.view(B, 1, J, 3) + diff_global_body_pos_offset
         local_ref_body_pos_offset = ref_episodic_offset.repeat(J,1)[:J * ref_episodic_offset.shape[0], :]
