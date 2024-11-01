@@ -11,12 +11,9 @@ autograd==1.7.0
 backcall==0.2.0
 beautifulsoup4==4.12.3
 blinker==1.8.2
-Brotli @ file:///home/conda/feedstock_root/build_artifacts/brotli-split_1648883617327/work
 cachetools==5.5.0
 cchardet==2.1.7
-certifi @ file:///home/conda/feedstock_root/build_artifacts/certifi_1725278078093/work/certifi
 chardet==5.2.0
-charset-normalizer @ file:///home/conda/feedstock_root/build_artifacts/charset-normalizer_1728479282467/work
 chumpy==0.70
 click==8.1.7
 cloudpickle==3.1.0
@@ -40,7 +37,6 @@ evdev==1.7.1
 executing==2.1.0
 Farama-Notifications==0.0.4
 fastjsonschema==2.20.0
-filelock @ file:///croot/filelock_1700591183607/work
 Flask==3.0.3
 flatbuffers==24.3.25
 fonttools==4.54.1
@@ -52,7 +48,6 @@ gdown==5.2.0
 gitdb==4.0.11
 GitPython==3.1.43
 glfw==2.7.0
-gmpy2 @ file:///tmp/build/80754af9/gmpy2_1645455532332/work
 google-auth==2.35.0
 google-auth-oauthlib==1.0.0
 grpcio==1.66.2
@@ -62,7 +57,6 @@ gymnasium==1.0.0
 human_body_prior==0.8.5.0
 humanfriendly==10.0
 hydra-core==1.3.2
-idna @ file:///home/conda/feedstock_root/build_artifacts/idna_1726459485162/work
 imageio==2.35.1
 imageio-ffmpeg==0.5.1
 importlib-resources==3.0.0
@@ -74,7 +68,6 @@ ipywidgets==8.1.5
 -e git+https://github.com/Ke-Wang1017/expressive_humanoid.git@58d1050a2b9206ac7b1eb3ab2860dbff5cb832b8#egg=isaacgym&subdirectory=isaacgym/python
 itsdangerous==2.2.0
 jedi==0.19.1
-Jinja2 @ file:///croot/jinja2_1716993405101/work
 joblib==1.4.2
 jsonschema==4.23.0
 jsonschema-specifications==2023.12.1
@@ -87,7 +80,6 @@ lightning-utilities==0.11.7
 lxml==5.3.0
 Markdown==3.7
 markdown-it-py==3.0.0
-MarkupSafe @ file:///croot/markupsafe_1704205993651/work
 matplotlib==3.6.3
 matplotlib-inline==0.1.7
 mdurl==0.1.2
@@ -96,13 +88,11 @@ mjcf2urdf==0.0.1
 mkl-fft==1.3.1
 mkl-random==1.2.2
 mkl-service==2.4.0
-mpmath @ file:///croot/mpmath_1690848262763/work
 msgpack==1.1.0
 mujoco==3.2.3
 multidict==6.1.0
 nbformat==5.10.4
 nest-asyncio==1.6.0
-networkx @ file:///croot/networkx_1690561992265/work
 ninja==1.11.1.1
 numpy==1.23.0
 numpy-stl==3.1.2
@@ -119,7 +109,6 @@ nvidia-nccl-cu12==2.20.5
 nvidia-nvjitlink-cu12==12.6.77
 nvidia-nvtx-cu12==12.1.105
 oauthlib==3.2.2
-olefile @ file:///home/conda/feedstock_root/build_artifacts/olefile_1701735466804/work
 omegaconf==2.3.0
 onnx==1.13.1
 onnxruntime==1.13.1
@@ -156,7 +145,6 @@ PyOpenGL==3.1.0
 pyparsing==3.1.4
 pyquaternion==0.9.9
 pyrender==0.1.45
-PySocks @ file:///home/conda/feedstock_root/build_artifacts/pysocks_1661604839144/work
 python-dateutil==2.9.0.post0
 python-utils==3.8.2
 python-xlib==0.33
@@ -165,10 +153,8 @@ pytorch3d==0.3.0
 pytz==2024.2
 PyVirtualDisplay==3.0
 PyWavelets==1.4.1
-PyYAML @ file:///croot/pyyaml_1728657952215/work
 ray==2.10.0
 referencing==0.35.1
-requests @ file:///home/conda/feedstock_root/build_artifacts/requests_1717057054362/work
 requests-oauthlib==2.0.0
 retrying==1.3.4
 rich==13.9.2
@@ -181,13 +167,11 @@ scikit-learn==1.3.2
 scipy==1.10.1
 sentry-sdk==2.16.0
 setproctitle==1.3.3
-six @ file:///home/conda/feedstock_root/build_artifacts/six_1620240208055/work
 smmap==5.0.1
 smpl_sim @ git+https://github.com/ZhengyiLuo/SMPLSim.git@3bcc506d92bf15329b2d68efcf429725b67f3a06
 smplx @ git+https://github.com/ZhengyiLuo/smplx.git@a5b8e4ac14f79f3f33fd2cf2a16e6f507146b813
 soupsieve==2.6
 stack-data==0.6.3
-sympy @ file:///croot/sympy_1724938189289/work
 tabulate==0.9.0
 tenacity==9.0.0
 tensorboard==2.14.0
@@ -195,7 +179,7 @@ tensorboard-data-server==0.7.2
 tensorboardX==2.6.2.2
 termcolor==2.4.0
 threadpoolctl==3.5.0
-tifffile==2023.7.10
+tiff==2023.7.10
 tomli==2.0.2
 torch==2.4.0
 torchaudio==0.10.0+cu113
@@ -207,9 +191,7 @@ traitlets==5.14.3
 transforms3d==0.4.2
 trimesh==4.4.9
 triton==3.0.0
-typing_extensions @ file:///home/conda/feedstock_root/build_artifacts/typing_extensions_1717802530399/work
 tzdata==2024.2
-urllib3 @ file:///home/conda/feedstock_root/build_artifacts/urllib3_1718653059220/work
 vtk==9.3.1
 wandb==0.18.3
 wcwidth==0.2.13
