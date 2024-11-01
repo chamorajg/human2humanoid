@@ -61,7 +61,7 @@ class Stompy_Batch:
         if extend_head:
             self._remove_idx = 3
             self.model_names = self.model_names + ["head_link"]
-            self._parents = torch.cat((self._parents, torch.tensor(self.root_index).to(device))).to(device) # Adding the hands joints
+            self._parents = torch.cat((self._parents, torch.tensor(self._root_index).to(device))).to(device) # Adding the hands joints
             head_length = 0.5
             self._offsets = torch.cat((self._offsets, torch.tensor([[[0, 0, head_length]]]).to(device)), dim = 1).to(device)
             self._local_rotation = torch.cat((self._local_rotation, torch.tensor([[[1, 0, 0, 0]]]).to(device)), dim = 1).to(device)
