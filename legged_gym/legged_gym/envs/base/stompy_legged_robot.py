@@ -98,26 +98,6 @@ class StompyLeggedRobot(BaseTask):
         self.trajectories_with_linvel = torch.zeros(self.num_envs, 63 * 100).to(
             self.device
         )  # 18dof + 18dofvel + 3angular velocity + 3projectedgravity + 18lastaction
-        if self.cfg.train_velocity_estimation:
-            # self.velocity_estimator = VelocityEstimator(63, 512, 256, 3, 25).to(self.device)
-            self.velocity_estimator = VelocityEstimatorGRU(60, 512, 3).to(
-                self.device
-            )
-
-            self.velocity_optimizer = optim.Adam(
-                self.velocity_estimator.parameters(), lr=0.00001
-            )
-
-        if self.cfg.use_velocity_estimation:
-            load_path = os.path.join(
-                LEGGED_GYM_ROOT_DIR,
-                "logs/velocity_orand",
-                "velocity_estimator_33000.pt",
-            )
-            self.velocity_estimator = VelocityEstimator(60, 512, 256, 3, 25).to(
-                self.device
-            )
-            self.velocity_estimator.load_state_dict(torch.load(load_path))
 
         self.prioritize_closing = torch.zeros(self.num_envs)
 
@@ -374,6 +354,7 @@ class StompyLeggedRobot(BaseTask):
         current_obs_a = torch.cat(
             (dof, dof_vel, base_ang_vel, base_gravity, actions), dim=1
         )
+        # TODO CH: no random numbers but variables
         self.trajectories[:, 1 * 60 :] = self.trajectories[:, : -1 * 60].clone()
         self.trajectories[:, 0 * 60 : 1 * 60] = current_obs_a.clone()
 
@@ -381,48 +362,13 @@ class StompyLeggedRobot(BaseTask):
         current_obs_a_with_linvel = torch.cat(
             (dof, dof_vel, lin_vel, base_ang_vel, base_gravity, actions), dim=1
         )
+        # TODO CH: no random numbers but variables
         self.trajectories_with_linvel[:, 1 * 63 :] = (
             self.trajectories_with_linvel[:, : -1 * 63].clone()
         )
         self.trajectories_with_linvel[:, 0 * 63 : 1 * 63] = (
             current_obs_a_with_linvel.clone()
         )
-        if self.cfg.train_velocity_estimation:
-            velocity = self.base_lin_vel
-            self.ready_for_train_indices = self.episode_length_buf > 25
-            train_input = self.trajectories[self.ready_for_train_indices]
-            B_reshaped = train_input.reshape(train_input.shape[0], 25, 63)
-            train_input = torch.flip(B_reshaped, dims=[1])
-
-            if train_input.shape[0] > 0:
-                # import ipdb; ipdb.set_trace()
-                # train_input = current_obs_a[self.ready_for_train_indices].to(self.device)
-                train_target = velocity[self.ready_for_train_indices].to(
-                    self.device
-                )
-
-                model_output = self.velocity_estimator(train_input)
-
-                loss = F.mse_loss(model_output, train_target)
-                self.velocity_optimizer.zero_grad()
-                loss.backward()
-                self.velocity_optimizer.step()
-                print("Velocity Estimation Loss: ", loss.item())
-            # save model
-            if self.common_step_counter % 5000 == 0:
-                model_dir = "logs/velocity_25_lr0.00001_gru_1"
-                if not os.path.exists(
-                    os.path.join(LEGGED_GYM_ROOT_DIR, model_dir)
-                ):
-                    os.makedirs(os.path.join(LEGGED_GYM_ROOT_DIR, model_dir))
-                load_path = os.path.join(
-                    LEGGED_GYM_ROOT_DIR,
-                    model_dir,
-                    "velocity_estimator_"
-                    + str(self.common_step_counter)
-                    + ".pt",
-                )
-                torch.save(self.velocity_estimator.state_dict(), load_path)
 
         return (
             self.obs_buf,
@@ -841,9 +787,7 @@ class StompyLeggedRobot(BaseTask):
     def compute_observations(self):
         self.obs_buf, self.privileged_obs_buf = self.compute_self_and_task_obs()
 
-    def compute_self_and_task_obs(
-        self,
-    ):
+    def compute_self_and_task_obs(self):
         """Computes observations"""
         # import ipdb; ipdb.set_trace()
         # print("self.episode_length_buf: ", self.episode_length_buf)
@@ -1678,18 +1622,6 @@ class StompyLeggedRobot(BaseTask):
                 * (actions_scaled + self.default_dof_pos - self.dof_pos)
                 - self._kd_scale * self.d_gains * self.dof_vel
             )
-        elif control_type == "V":
-            torques = (
-                self._kp_scale * self.p_gains * (actions_scaled - self.dof_vel)
-                - self._kd_scale
-                * self.d_gains
-                * (self.dof_vel - self.last_dof_vel)
-                / self.sim_params.dt
-            )
-        elif control_type == "T":
-            torques = actions_scaled
-        else:
-            raise NameError(f"Unknown controller type: {control_type}")
         if self.cfg.domain_rand.randomize_torque_rfi:
             torques = (
                 torques
@@ -1764,7 +1696,7 @@ class StompyLeggedRobot(BaseTask):
                 self.root_states[env_ids, :3] = motion_res["root_pos"][env_ids]
                 self.root_states[
                     env_ids, 2
-                ] += 0.04  # in case under the terrain
+                ] += 0.04  # in case under the terrain                 # TODO: CH should be parameter
 
                 if self.cfg.domain_rand.born_offset:
                     rand_num = np.random.rand()
@@ -1881,6 +1813,7 @@ class StompyLeggedRobot(BaseTask):
             self._recovery_counter[:] = (
                 60  # 60 steps for the robot to stabilize
             )
+            # TODO: CH should be parameter
 
     def _freeze_ref_motion(self):
         if self.cfg.motion.teleop:
@@ -1910,7 +1843,7 @@ class StompyLeggedRobot(BaseTask):
             )  # shape [num_envs]
             move_up = (
                 teleop_distance
-                < self.cfg.motion.terrain_level_down_distance / 5
+                < self.cfg.motion.terrain_level_down_distance / 5                  # TODO: CH should be parameter
             )
             move_down = (
                 teleop_distance > self.cfg.motion.terrain_level_down_distance
@@ -1928,11 +1861,11 @@ class StompyLeggedRobot(BaseTask):
                 distance
                 < torch.norm(self.commands[env_ids, :2], dim=1)
                 * self.max_episode_length_s
-                * 0.5
+                * 0.5                  # TODO: CH should be parameter
             ) * ~move_up
 
         # import ipdb; ipdb.set_trace()
-        self.terrain_levels[env_ids] += 1 * move_up - 1 * move_down
+        self.terrain_levels[env_ids] += 1 * move_up - 1 * move_down                  # TODO: CH should be parameter
         # Robots that solve the last level are sent to a random one
         self.terrain_levels[env_ids] = torch.where(
             self.terrain_levels[env_ids] >= self.max_terrain_level,
@@ -2083,14 +2016,14 @@ class StompyLeggedRobot(BaseTask):
         else:
             raise NotImplementedError
         # import ipdb; ipdb.set_trace()
-        self.teleop_levels[env_ids] += 1 * move_up - 1 * move_down
+        self.teleop_levels[env_ids] += 1 * move_up - 1 * move_down # TODO CH: should be a parameter
         # Robots that solve the last level are sent to a random one
         self.teleop_levels[env_ids] = torch.where(
-            self.teleop_levels[env_ids] >= 10,  # (the maximum level is nine)
+            self.teleop_levels[env_ids] >= 10,  # (the maximum level is nine) # TODO CH: should be a parameter
             torch.randint_like(
-                self.teleop_levels[env_ids], 10
+                self.teleop_levels[env_ids], 10 # TODO CH: should be a parameter
             ),  # (the maximum level is nine)
-            torch.clip(self.teleop_levels[env_ids], 0),
+            torch.clip(self.teleop_levels[env_ids], 0), 
         )  # (the minumum level is zero)
 
     def _get_noise_scale_vec(self, cfg):
@@ -2114,19 +2047,19 @@ class StompyLeggedRobot(BaseTask):
                 )
                 curr_obs_len = 0
                 # body_pos
-                noise_vec[0 : (max_num_bodies - 1) * 3] = (
+                noise_vec[0 : (max_num_bodies - 1) * 3] = ( # TODO CH: should be a parameter
                     noise_scales.body_pos
                     * noise_level
                     * self.obs_scales.dof_pos
                 )
-                curr_obs_len += (max_num_bodies - 1) * 3
+                curr_obs_len += (max_num_bodies - 1) * 3 # TODO CH: should be a parameter
                 # body_rot
                 noise_vec[curr_obs_len : curr_obs_len + max_num_bodies * 6] = (
                     noise_scales.body_rot
                     * noise_level
                     * self.obs_scales.dof_vel
                 )
-                curr_obs_len += max_num_bodies * 6
+                curr_obs_len += max_num_bodies * 6 # TODO CH: should be a parameter
                 # body vel
                 noise_vec[curr_obs_len : curr_obs_len + max_num_bodies * 3] = (
                     noise_scales.body_lin_vel
@@ -2141,7 +2074,7 @@ class StompyLeggedRobot(BaseTask):
                     * self.obs_scales.ang_vel
                 )
                 self.self_obs_size = curr_obs_len
-                curr_obs_len += max_num_bodies * 3
+                curr_obs_len += max_num_bodies * 3 # TODO CH: should be a parameter
                 # ref body_pos diff
                 noise_vec[curr_obs_len : curr_obs_len + max_num_bodies * 3] = (
                     noise_scales.ref_body_pos
@@ -2187,6 +2120,7 @@ class StompyLeggedRobot(BaseTask):
             else:
                 raise NotImplementedError
         else:
+            # TODO CH: should be a parameter
             noise_vec[0:3] = (
                 noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
             )
@@ -2199,7 +2133,7 @@ class StompyLeggedRobot(BaseTask):
                 noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
             )
             noise_vec[9 + 2 * self.num_actions :] = 0.01  # previous actions
-            assert len(noise_vec) == 9 + 3 * self.num_actions
+            assert len(noise_vec) == 9 + 3 * self.num_actions # TODO CH: should be a parameter
         return noise_vec
 
     def _episodic_domain_randomization(self, env_ids):
@@ -2228,11 +2162,11 @@ class StompyLeggedRobot(BaseTask):
             ):  # update based on teleop level
                 kp_scale_offset_from_1 = self._kp_scale[env_ids] - 1
                 self._kp_scale[env_ids] -= kp_scale_offset_from_1 * (
-                    1 - self.teleop_levels[env_ids].unsqueeze(-1) / 10.0
+                    1 - self.teleop_levels[env_ids].unsqueeze(-1) / 10.0 # TODO CH: should be a parameter
                 )
                 kd_scale_offset_from_1 = self._kd_scale[env_ids] - 1
                 self._kd_scale[env_ids] -= kd_scale_offset_from_1 * (
-                    1 - self.teleop_levels[env_ids].unsqueeze(-1) / 10.0
+                    1 - self.teleop_levels[env_ids].unsqueeze(-1) / 10.0 # TODO CH: should be a parameter
                 )
 
         if self.cfg.domain_rand.randomize_rfi_lim:
@@ -3199,7 +3133,7 @@ class StompyLeggedRobot(BaseTask):
         last_dis_norm = torch.norm(last_dis, dim=1)
         current_dis = ref_body_pos[:, 0:2] - self.root_states[:, 0:2]
         current_dis_norm = torch.norm(current_dis, dim=1)
-        reward = torch.clamp(last_dis_norm - current_dis_norm, max=1 / 20)
+        reward = torch.clamp(last_dis_norm - current_dis_norm, max=1 / 20) # TODO CH: should be a parameter
         return reward
 
     def _reward_in_the_air(self):
@@ -3241,7 +3175,7 @@ class StompyLeggedRobot(BaseTask):
         diff_global_body_pos = ref_body_pos_extend - body_pos_extend
 
         diff_global_body_pos_vr = diff_global_body_pos[
-            :, 20:22
+            :, 20:22 # TODO CH: should be a parameter
         ]  # left hand, right hand
         far_enough = (
             torch.norm(diff_global_body_pos_vr, dim=-1)
@@ -3297,7 +3231,7 @@ class StompyLeggedRobot(BaseTask):
 
         print(f"Stable lower when vrclose : {diff_global_body_pos.shape}")
         diff_global_body_pos_vr = diff_global_body_pos[
-            :, 20:22
+            :, 20:22 # TODO CH: should be a parameter
         ]  # left hand, right hand
         far_enough = (
             torch.norm(diff_global_body_pos_vr, dim=-1)

@@ -51,7 +51,6 @@ class StompyProTeleopCfg(LeggedRobotCfg):
         max_push_vel_xy = 0.5
 
         randomize_friction = True
-        # randomize_friction = False
         friction_range = [-0.6, 1.2]
 
         randomize_base_mass = False  # replaced by randomize_link_mass
@@ -93,6 +92,8 @@ class StompyProTeleopCfg(LeggedRobotCfg):
 
     class control(LeggedRobotCfg.control):
         # PD Drive parameters:
+        # TODO CH: This should be updated based on the
+        # https://github.com/kscalelabs/sim/blob/63d410f966d029287ffadf375358bcc5e567073b/sim/resources/stompypro/joints.py#L145
         control_type = "P"
         stiffness = {"joint": 80.0}  # [N*m/rad]
         damping = {"joint": 1}  # [N*m*s/rad]
@@ -224,7 +225,8 @@ class StompyProTeleopCfg(LeggedRobotCfg):
         soft_torque_limit = 0.85
 
         max_contact_force = 500.0
-
+        # TODO CH: Lot's of differences compared to H1?
+        # TODO CH: no class motion (LeggedRobotCfg.motion): ?
         teleop_joint_pos_sigma = 0.5
         teleop_joint_vel_sigma = 10.0
         teleop_body_pos_sigma = 0.5  # 0.01

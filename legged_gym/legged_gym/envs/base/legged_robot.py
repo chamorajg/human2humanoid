@@ -96,26 +96,6 @@ class LeggedRobot(BaseTask):
         self.trajectories_with_linvel = torch.zeros(self.num_envs, 66 * 100).to(
             self.device
         )  # 19dof + 19dofvel + 3angular velocity + 4projectedgravity + 19lastaction
-        if self.cfg.train_velocity_estimation:
-            # self.velocity_estimator = VelocityEstimator(63, 512, 256, 3, 25).to(self.device)
-            self.velocity_estimator = VelocityEstimatorGRU(63, 512, 3).to(
-                self.device
-            )
-
-            self.velocity_optimizer = optim.Adam(
-                self.velocity_estimator.parameters(), lr=0.00001
-            )
-
-        if self.cfg.use_velocity_estimation:
-            load_path = os.path.join(
-                LEGGED_GYM_ROOT_DIR,
-                "logs/velocity_orand",
-                "velocity_estimator_33000.pt",
-            )
-            self.velocity_estimator = VelocityEstimator(63, 512, 256, 3, 25).to(
-                self.device
-            )
-            self.velocity_estimator.load_state_dict(torch.load(load_path))
 
         self.prioritize_closing = torch.zeros(self.num_envs)
 
@@ -368,6 +348,7 @@ class LeggedRobot(BaseTask):
         current_obs_a = torch.cat(
             (dof, dof_vel, base_ang_vel, base_gravity, actions), dim=1
         )
+        # TODO CH: no random numbers but variables
         self.trajectories[:, 1 * 63 :] = self.trajectories[:, : -1 * 63].clone()
         self.trajectories[:, 0 * 63 : 1 * 63] = current_obs_a.clone()
 
@@ -375,6 +356,7 @@ class LeggedRobot(BaseTask):
         current_obs_a_with_linvel = torch.cat(
             (dof, dof_vel, lin_vel, base_ang_vel, base_gravity, actions), dim=1
         )
+        # TODO CH: no random numbers but variables
         self.trajectories_with_linvel[:, 1 * 66 :] = (
             self.trajectories_with_linvel[:, : -1 * 66].clone()
         )
@@ -392,6 +374,7 @@ class LeggedRobot(BaseTask):
 
             # GRU
             # Reshape A into the desired shape (num_envs, 25, 63)
+            #         # TODO CH: no random numbers but variables
             B_reshaped = train_input.reshape(train_input.shape[0], 25, 63)
 
             # Transpose the reshaped array to match the desired rearrangement of axes
@@ -955,10 +938,11 @@ class LeggedRobot(BaseTask):
                 diff = (
                     ref_body_pos_extend[:, [0]] - self._rigid_body_pos[:, [0]]
                 )
-                ref_body_pos_extend[:, 11:] -= diff
+                ref_body_pos_extend[:, 11:] -= diff # TODO: CH should be a parameter
 
             self.marker_coords[:] = ref_body_pos_extend.reshape(B, -1, 3)
 
+        # TODO: CH biggest todo is to chop this down and put into different sub functions at least
         if self.cfg.motion.teleop:
             if self.cfg.motion.teleop_obs_version == "v1":
                 with torch.no_grad():
@@ -1931,19 +1915,6 @@ class LeggedRobot(BaseTask):
                         dim=-1,
                     )  # 19dim
 
-                if self.cfg.use_velocity_estimation:
-                    self.ready_for_train_indices = self.episode_length_buf > 25
-                    current_obs_a = self.trajectories[
-                        self.ready_for_train_indices, 0
-                    ]
-                    if current_obs_a.shape[0] > 0:
-                        estimate_velocity = self.velocity_estimator(
-                            self.trajectories[self.ready_for_train_indices]
-                        )
-                        obs[self.ready_for_train_indices, 38:41] = (
-                            estimate_velocity
-                        )
-
             elif (
                 self.cfg.motion.teleop_obs_version
                 == "v-teleop-extend-vr-max-nolinvel"
@@ -2147,20 +2118,6 @@ class LeggedRobot(BaseTask):
                         ],
                         dim=-1,
                     )  # 19dim
-
-                if self.cfg.use_velocity_estimation:
-                    self.ready_for_train_indices = self.episode_length_buf > 25
-                    current_obs_a = self.trajectories[
-                        self.ready_for_train_indices, :63
-                    ]
-                    if current_obs_a.shape[0] > 0:
-                        raise NotImplementedError
-                        estimate_velocity = self.velocity_estimator(
-                            self.trajectories[self.ready_for_train_indices]
-                        )
-                        obs[self.ready_for_train_indices, 38:41] = (
-                            estimate_velocity
-                        )
 
             elif (
                 self.cfg.motion.teleop_obs_version
@@ -2376,20 +2333,6 @@ class LeggedRobot(BaseTask):
                         ],
                         dim=-1,
                     )  # 19dim
-
-                if self.cfg.use_velocity_estimation:
-                    self.ready_for_train_indices = self.episode_length_buf > 25
-                    current_obs_a = self.trajectories[
-                        self.ready_for_train_indices, :63
-                    ]
-                    if current_obs_a.shape[0] > 0:
-                        raise NotImplementedError
-                        estimate_velocity = self.velocity_estimator(
-                            self.trajectories[self.ready_for_train_indices]
-                        )
-                        obs[self.ready_for_train_indices, 38:41] = (
-                            estimate_velocity
-                        )
 
             elif (
                 self.cfg.motion.teleop_obs_version == "v-teleop-extend-max-full"
