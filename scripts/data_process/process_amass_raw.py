@@ -82,8 +82,9 @@ all_sequences = [
     "TotalCapture",
     "Transitions_mocap",
     "BMLhandball",
-    "DanceDB"
+    "DanceDB",
 ]
+
 
 def read_data(folder, sequences):
     # sequences = [osp.join(folder, x) for x in sorted(os.listdir(folder)) if osp.isdir(osp.join(folder, x))]
@@ -111,7 +112,9 @@ def read_single_sequence(folder, seq_name):
 
     for subject in tqdm(subjects):
         actions = [
-            x for x in os.listdir(osp.join(folder, subject)) if x.endswith(".npz") and osp.isdir(osp.join(folder, subject))
+            x
+            for x in os.listdir(osp.join(folder, subject))
+            if x.endswith(".npz") and osp.isdir(osp.join(folder, subject))
         ]
 
         for action in actions:
@@ -137,7 +140,9 @@ def read_seq_data(folder, nsubjects, fps):
     subjects = os.listdir(folder)
     sequences = {}
 
-    assert nsubjects < len(subjects), "nsubjects should be less than len(subjects)"
+    assert nsubjects < len(
+        subjects
+    ), "nsubjects should be less than len(subjects)"
 
     for subject in subjects[:nsubjects]:
         actions = os.listdir(osp.join(folder, subject))
@@ -177,7 +182,6 @@ if __name__ == "__main__":
     db_file = osp.join(out_path, "amass_db_smplh.pt")
 
     db = read_data(args.dir, sequences=all_sequences)
-     
-    
+
     print(f"Saving AMASS dataset to {db_file}")
     joblib.dump(db, db_file)
