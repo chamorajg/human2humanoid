@@ -9,6 +9,7 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 Visualize motion library
 """
+
 import glob
 import os
 import sys
@@ -45,32 +46,41 @@ class AssetDesc:
 asset_xml = "legged_gym/resources/robots/stompypro/robot_test.xml"
 asset_urdf = "legged_gym/resources/robots/stompypro/robot_test.urdf"
 asset_descriptors = [
-    # AssetDesc(h1_xml, False),
     AssetDesc(asset_urdf, False),
 ]
 sk_tree = SkeletonTree.from_mjcf(asset_xml)
-motion_file = "/home/kasm-user/Downloads/human2humanoid/data/stompy/amass_train.pkl"
+curr_dir = os.getcwd()
+motion_file = os.path.join(curr_dir, "data/stompy/amass_train.pkl")
 
 # parse arguments
-args = gymutil.parse_arguments(description="Joint monkey: Animate degree-of-freedom ranges",
-                               custom_parameters=[{
-                                   "name": "--asset_id",
-                                   "type": int,
-                                   "default": 0,
-                                   "help": "Asset id (0 - %d)" % (len(asset_descriptors) - 1)
-                               }, {
-                                   "name": "--speed_scale",
-                                   "type": float,
-                                   "default": 1.0,
-                                   "help": "Animation speed scale"
-                               }, {
-                                   "name": "--show_axis",
-                                   "action": "store_true",
-                                   "help": "Visualize DOF axis"
-                               }])
+args = gymutil.parse_arguments(
+    description="Joint monkey: Animate degree-of-freedom ranges",
+    custom_parameters=[
+        {
+            "name": "--asset_id",
+            "type": int,
+            "default": 0,
+            "help": "Asset id (0 - %d)" % (len(asset_descriptors) - 1),
+        },
+        {
+            "name": "--speed_scale",
+            "type": float,
+            "default": 1.0,
+            "help": "Animation speed scale",
+        },
+        {
+            "name": "--show_axis",
+            "action": "store_true",
+            "help": "Visualize DOF axis",
+        },
+    ],
+)
 
 if args.asset_id < 0 or args.asset_id >= len(asset_descriptors):
-    print("*** Invalid asset_id specified.  Valid range is 0 to %d" % (len(asset_descriptors) - 1))
+    print(
+        "*** Invalid asset_id specified.  Valid range is 0 to %d"
+        % (len(asset_descriptors) - 1)
+    )
     quit()
 
 # initialize gym
@@ -94,7 +104,12 @@ elif args.physics_engine == gymapi.SIM_PHYSX:
 if not args.use_gpu_pipeline:
     print("WARNING: Forcing CPU pipeline.")
 
-sim = gym.create_sim(args.compute_device_id, args.graphics_device_id, args.physics_engine, sim_params)
+sim = gym.create_sim(
+    args.compute_device_id,
+    args.graphics_device_id,
+    args.physics_engine,
+    sim_params,
+)
 if sim is None:
     print("*** Failed to create sim")
     quit()
@@ -159,13 +174,28 @@ for i in range(num_envs):
 gym.prepare_sim(sim)
 
 
+device = (
+    torch.device("cuda", index=0)
+    if torch.cuda.is_available()
+    else torch.device("cpu")
+)
 
-device = (torch.device("cuda", index=0) if torch.cuda.is_available() else torch.device("cpu"))
-
-motion_lib = MotionLibStompy(motion_file=motion_file, device=device, masterfoot_conifg=None, fix_height=False, multi_thread=False, mjcf_file=asset_xml)
+motion_lib = MotionLibStompy(
+    motion_file=motion_file,
+    device=device,
+    masterfoot_conifg=None,
+    fix_height=False,
+    multi_thread=False,
+    mjcf_file=asset_xml,
+)
 num_motions = 10
 curr_start = 0
-motion_lib.load_motions(skeleton_trees=[sk_tree] * num_motions, gender_betas=[torch.zeros(18)] * num_motions, limb_weights=[np.zeros(10)] * num_motions, random_sample=False)
+motion_lib.load_motions(
+    skeleton_trees=[sk_tree] * num_motions,
+    gender_betas=[torch.zeros(18)] * num_motions,
+    limb_weights=[np.zeros(10)] * num_motions,
+    random_sample=False,
+)
 motion_keys = motion_lib.curr_motion_keys
 
 current_dof = 0
@@ -177,7 +207,6 @@ rigidbody_state = gymtorch.wrap_tensor(rigidbody_state)
 rigidbody_state = rigidbody_state.reshape(num_envs, -1, 13)
 
 actor_root_state = gym.acquire_actor_root_state_tensor(sim)
-print(actor_root_state.shape)
 actor_root_state = gymtorch.wrap_tensor(actor_root_state)
 
 gym.subscribe_viewer_keyboard_event(viewer, gymapi.KEY_LEFT, "previous")
@@ -200,44 +229,88 @@ sphere_asset = gym.create_sphere(sim, radius, sphere_params)
 
 num_spheres = 18
 init_positions = gymapi.Vec3(0.0, 0.0, 0.0)
-spacing = 0.
+spacing = 0.0
 
 while not gym.query_viewer_has_closed(viewer):
     # step the physics
     motion_len = motion_lib.get_motion_length(motion_id).item()
     motion_time = time_step % motion_len
-    motion_res = motion_lib.get_motion_state(torch.tensor([motion_id]).to(args.compute_device_id), torch.tensor([motion_time]).to(args.compute_device_id))
+    motion_res = motion_lib.get_motion_state(
+        torch.tensor([motion_id]).to(args.compute_device_id),
+        torch.tensor([motion_time]).to(args.compute_device_id),
+    )
 
-    root_pos, root_rot, dof_pos, root_vel, root_ang_vel, dof_vel, smpl_params, limb_weights, pose_aa, rb_pos, rb_rot, body_vel, body_ang_vel = \
-                motion_res["root_pos"], motion_res["root_rot"], motion_res["dof_pos"], motion_res["root_vel"], motion_res["root_ang_vel"], motion_res["dof_vel"], \
-                motion_res["motion_bodies"], motion_res["motion_limb_weights"], motion_res["motion_aa"], motion_res["rg_pos"], motion_res["rb_rot"], motion_res["body_vel"], motion_res["body_ang_vel"]
+    (
+        root_pos,
+        root_rot,
+        dof_pos,
+        root_vel,
+        root_ang_vel,
+        dof_vel,
+        smpl_params,
+        limb_weights,
+        pose_aa,
+        rb_pos,
+        rb_rot,
+        body_vel,
+        body_ang_vel,
+    ) = (
+        motion_res["root_pos"],
+        motion_res["root_rot"],
+        motion_res["dof_pos"],
+        motion_res["root_vel"],
+        motion_res["root_ang_vel"],
+        motion_res["dof_vel"],
+        motion_res["motion_bodies"],
+        motion_res["motion_limb_weights"],
+        motion_res["motion_aa"],
+        motion_res["rg_pos"],
+        motion_res["rb_rot"],
+        motion_res["body_vel"],
+        motion_res["body_ang_vel"],
+    )
     if args.show_axis:
         gym.clear_lines(viewer)
-        
+
     gym.clear_lines(viewer)
     gym.refresh_rigid_body_state_tensor(sim)
     idx = 0
-    for pos_joint in rb_pos[0, 1:]: # idx 0 torso (duplicate with 11)
-        sphere_geom2 = gymutil.WireframeSphereGeometry(0.1, 4, 4, None, color=(1, 0.0, 0.0))
-        sphere_pose = gymapi.Transform(gymapi.Vec3(pos_joint[0], pos_joint[1], pos_joint[2]), r=None)
-        gymutil.draw_lines(sphere_geom2, gym, viewer, envs[0], sphere_pose) 
-    ###########################################################################
-    root_states = torch.cat([root_pos, root_rot, root_vel, root_ang_vel], dim=-1).repeat(num_envs, 1)
-    # gym.set_actor_root_state_tensor(sim, gymtorch.unwrap_tensor(root_states))
-    gym.set_actor_root_state_tensor_indexed(sim, gymtorch.unwrap_tensor(root_states), gymtorch.unwrap_tensor(env_ids), len(env_ids))
+    for pos_joint in rb_pos[0, 1:]:  # idx 0 torso (duplicate with 11)
+        sphere_geom2 = gymutil.WireframeSphereGeometry(
+            0.1, 4, 4, None, color=(1, 0.0, 0.0)
+        )
+        sphere_pose = gymapi.Transform(
+            gymapi.Vec3(pos_joint[0], pos_joint[1], pos_joint[2]), r=None
+        )
+        gymutil.draw_lines(sphere_geom2, gym, viewer, envs[0], sphere_pose)
+
+    root_states = torch.cat(
+        [root_pos, root_rot, root_vel, root_ang_vel], dim=-1
+    ).repeat(num_envs, 1)
+    gym.set_actor_root_state_tensor_indexed(
+        sim,
+        gymtorch.unwrap_tensor(root_states),
+        gymtorch.unwrap_tensor(env_ids),
+        len(env_ids),
+    )
 
     gym.refresh_actor_root_state_tensor(sim)
 
-    # dof_pos = dof_pos.cpu().numpy()
-    # dof_states['pos'] = dof_pos
-    # speed = speeds[current_dof]
-    dof_state = torch.stack([dof_pos, torch.zeros_like(dof_pos)], dim=-1).squeeze().repeat(num_envs, 1)
-    gym.set_dof_state_tensor_indexed(sim, gymtorch.unwrap_tensor(dof_state), gymtorch.unwrap_tensor(env_ids), len(env_ids))
+    dof_state = (
+        torch.stack([dof_pos, torch.zeros_like(dof_pos)], dim=-1)
+        .squeeze()
+        .repeat(num_envs, 1)
+    )
+    gym.set_dof_state_tensor_indexed(
+        sim,
+        gymtorch.unwrap_tensor(dof_state),
+        gymtorch.unwrap_tensor(env_ids),
+        len(env_ids),
+    )
 
     gym.simulate(sim)
     gym.refresh_rigid_body_state_tensor(sim)
     gym.fetch_results(sim, True)
-    
 
     # update the viewer
     gym.step_graphics(sim)
@@ -246,16 +319,19 @@ while not gym.query_viewer_has_closed(viewer):
     # Wait for dt to elapse in real time.
     # This synchronizes the physics simulation with the rendering rate.
     gym.sync_frame_time(sim)
-    # time_step += 1/5
     time_step += dt
 
     for evt in gym.query_viewer_action_events(viewer):
         if evt.action == "previous" and evt.value > 0:
             motion_id = (motion_id - 1) % num_motions
-            print(f"Motion ID: {motion_id}. Motion length: {motion_len:.3f}. Motion Name: {motion_keys[motion_id]}")
+            print(
+                f"Motion ID: {motion_id}. Motion length: {motion_len:.3f}. Motion Name: {motion_keys[motion_id]}"
+            )
         elif evt.action == "next" and evt.value > 0:
             motion_id = (motion_id + 1) % num_motions
-            print(f"Motion ID: {motion_id}. Motion length: {motion_len:.3f}. Motion Name: {motion_keys[motion_id]}")
+            print(
+                f"Motion ID: {motion_id}. Motion length: {motion_len:.3f}. Motion Name: {motion_keys[motion_id]}"
+            )
         elif evt.action == "add" and evt.value > 0:
             motion_acc.add(motion_keys[motion_id])
             print(f"Adding motion {motion_keys[motion_id]}")
@@ -263,7 +339,13 @@ while not gym.query_viewer_has_closed(viewer):
             print(motion_acc)
         elif evt.action == "next_batch" and evt.value > 0:
             curr_start += num_motions
-            motion_lib.load_motions(skeleton_trees=[sk_tree] * num_motions, gender_betas=[torch.zeros(17)] * num_motions, limb_weights=[np.zeros(10)] * num_motions, random_sample=False, start_idx=curr_start)
+            motion_lib.load_motions(
+                skeleton_trees=[sk_tree] * num_motions,
+                gender_betas=[torch.zeros(17)] * num_motions,
+                limb_weights=[np.zeros(10)] * num_motions,
+                random_sample=False,
+                start_idx=curr_start,
+            )
             motion_keys = motion_lib.curr_motion_keys
             print(f"Next batch {curr_start}")
 
