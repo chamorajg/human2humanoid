@@ -144,10 +144,10 @@ def run(in_file: str, out_file: str):
                 objs_info=None,
             )
             smpl_local_robot.write_xml(
-                "phc/data/assets/mjcf/smpl_humanoid_1.xml"
+                "phc/phc/data/assets/mjcf/smpl_humanoid_1.xml"
             )
             skeleton_tree = SkeletonTree.from_mjcf(
-                "phc/data/assets/mjcf/smpl_humanoid_1.xml"
+                "phc/phc/data/assets/mjcf/smpl_humanoid_1.xml"
             )
 
             root_trans_offset = (
@@ -244,12 +244,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--in_file",
         type=str,
-        default="sample_data/amass_copycat_take5_train.pkl",
+        default="data/amass_copycat_take5_train.pkl",
     )
     parser.add_argument(
         "--out_file",
         type=str,
-        default="data/amass/pkls/amass_copycat_take5_train.pkl",
+        default="data/AMASS/pkls/amass_copycat_take5_train.pkl",
     )
     args = parser.parse_args()
     run(in_file=args.in_file, out_file=args.out_file)

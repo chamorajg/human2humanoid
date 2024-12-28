@@ -1150,6 +1150,223 @@ class StompyLeggedRobot(BaseTask):
                 obs = torch.cat(
                     [self_obs, task_obs, self.actions], dim=-1  #
                 )  # 327 + 216 + 18 = 561
+            elif (
+                self.cfg.motion.teleop_obs_version
+                == "v-teleop-extend-vr-max-nolinvel"
+            ):
+                body_pos = self._rigid_body_pos # [N, 19, 3]
+                body_rot = self._rigid_body_rot # [N, 19, 4]
+                body_vel = self._rigid_body_vel # [N, 19, 3]
+                body_ang_vel = self._rigid_body_ang_vel # [N, 19, 3]
+                dof_pos = self.dof_pos # [N, 18]
+                dof_vel = self.dof_vel # [N, 18]
+
+                extend_curr_pos = (
+                    torch_utils.my_quat_rotate(
+                        body_rot[:, self.extend_body_parent_ids].reshape(-1, 4),
+                        self.extend_body_pos[:,].reshape(-1, 3),
+                    ).view(self.num_envs, -1, 3)
+                    + body_pos[:, self.extend_body_parent_ids]
+                ) # [N, 3, 3]
+                body_pos_extend = torch.cat([body_pos, extend_curr_pos], dim=1) # [N, 22, 3]
+                body_pos_subset = body_pos_extend[
+                    :, self._track_bodies_extend_id, :
+                ]
+
+                ref_rb_pos_subset = ref_body_pos_extend[
+                    :, self._track_bodies_extend_id
+                ]
+                ref_body_vel_subset = ref_body_vel_extend[
+                    :, self._track_bodies_extend_id
+                ]
+
+                # robot
+                dof_pos = self.dof_pos
+                dof_vel = self.dof_vel
+                base_vel = self.base_lin_vel
+                base_ang_vel = self.base_ang_vel
+                base_gravity = self.projected_gravity
+
+                # ref_keypoint_pos_baseframe including 8 keypoints: handx2, elbowx2, shoulderx2, anklex2, 3dimx8keypoints = 18dim
+                root_pos = body_pos[..., 0, :]
+                root_rot = body_rot[..., 0, :]
+                root_vel = body_vel[:, 0, :]
+                root_ang_vel = body_ang_vel[:, 0, :]
+                ref_root_ang_vel = ref_body_ang_vel[:, 0, :]
+
+                if self.cfg.asset.clip_motion_goal:
+                    # import ipdb; ipdb.set_trace()
+                    ref_head = ref_rb_pos_subset[:, 2]
+                    body_xyz = self.root_states[:, :3]
+                    direction_to_body = body_xyz - ref_head
+                    xy_direction = direction_to_body[:, :2]
+                    distance = torch.norm(xy_direction, dim=1)
+                    # import ipdb; ipdb.set_trace()
+                    far = distance > self.cfg.asset.clip_motion_goal_distance
+                    direction_to_body_norm = F.normalize(
+                        direction_to_body[:, :2], p=2, dim=1
+                    )
+                    # direction_to_body_norm = xy_direction /
+                    ref_rb_pos_subset[far, 2, :2] = (
+                        self.root_states[far, :2]
+                        - direction_to_body_norm[far]
+                        * self.cfg.asset.clip_motion_goal_distance
+                    )
+
+                if (
+                    self.cfg.asset.zero_out_far
+                ):  # ref_rb_pos_subset[0], ref_rb_pos_subset[1], head ref_rb_pos_subset[2]
+                    close_distance = self.cfg.asset.close_distance
+                    distance = torch.norm(
+                        root_pos
+                        - ref_body_pos_extend[
+                            0 :: self.cfg.motion.num_traj_samples, 0, :
+                        ],
+                        dim=-1,
+                    )
+                    zeros_subset = distance > close_distance
+
+                    self.prioritize_closing = zeros_subset
+                    if self.cfg.asset.zero_out_far_change_obs:
+
+                        if self.cfg.motion.future_tracks:
+                            n = self.cfg.motion.num_traj_samples
+                            # import ipdb; ipdb.set_trace()
+                            zeros_set_future = zeros_subset.repeat_interleave(
+                                n
+                            )  # zeros_set_future[n * i: n * i + n] = zeros_subset
+                            # print(ref_rb_pos_subset[zeros_set_future, :2])
+                            body_pos = body_pos_subset[
+                                zeros_subset, :2
+                            ]  # two hands\
+                            ref_rb_pos_subset[zeros_set_future, :2] = (
+                                body_pos.repeat_interleave(n, dim=0)
+                            )
+                            # print(ref_rb_pos_subset[zeros_set_future, :2])
+                            root_vel_ = (
+                                root_vel[zeros_subset]
+                                .unsqueeze(1)
+                                .repeat(1, 3, 1)
+                            )
+                            ref_body_vel_subset[zeros_set_future, :] = (
+                                root_vel_.repeat_interleave(n, dim=0)
+                            )
+                            self.point_goal = distance
+                            far_distance = (
+                                self.cfg.asset.far_distance
+                            )  # does not seem to need this in particular...
+                            vector_zero_subset = (
+                                distance > far_distance
+                            )  # > 5 meters, it become just a direction
+                            vector_zero_subset_future = torch.zeros(
+                                n * len(vector_zero_subset), dtype=torch.bool
+                            )
+                            vector_zero_subset_future[::n] = (
+                                vector_zero_subset  # vector_zero_subset_future[n * i] = vector_zero_subset[i]
+                            )
+                            vector_zero_subset_future2 = vector_zero_subset.repeat_interleave(
+                                n
+                            )  # vector_zero_subset_future[n * i : n * i + n] = vector_zero_subset[i]
+                            dis_new = (
+                                (
+                                    ref_rb_pos_subset[
+                                        vector_zero_subset_future, 2
+                                    ]
+                                    - body_pos_subset[vector_zero_subset, 2]
+                                )
+                                / distance[vector_zero_subset, None]
+                                * far_distance
+                            ) + body_pos_subset[vector_zero_subset, 2]
+                            ref_rb_pos_subset[vector_zero_subset_future2, 2] = (
+                                dis_new.repeat_interleave(n, dim=0)
+                            )
+
+                        else:
+                            ref_rb_pos_subset[zeros_subset, :2] = (
+                                body_pos_subset[zeros_subset, :2]
+                            )  # two hands\
+                            ref_body_vel_subset[zeros_subset, :] = (
+                                root_vel[zeros_subset]
+                                .unsqueeze(1)
+                                .repeat(1, 3, 1)
+                            )
+                            self.point_goal = distance
+                            far_distance = (
+                                self.cfg.asset.far_distance
+                            )  # does not seem to need this in particular...
+                            vector_zero_subset = (
+                                distance > far_distance
+                            )  # > 5 meters, it become just a direction
+                            ref_rb_pos_subset[vector_zero_subset, 2] = (
+                                (
+                                    ref_rb_pos_subset[vector_zero_subset, 2]
+                                    - body_pos_subset[vector_zero_subset, 2]
+                                )
+                                / distance[vector_zero_subset, None]
+                                * far_distance
+                            ) + body_pos_subset[vector_zero_subset, 2]
+
+                # self_obs = compute_humanoid_observations(body_pos, body_rot, root_vel, root_ang_vel, dof_pos, dof_vel, True, False) # 222
+                # import ipdb; ipdb.set_trace()
+                if self.cfg.motion.realtime_vr_keypoints:
+                    ref_rb_pos_subset = self.realtime_vr_keypoints_pos
+                    ref_body_vel_subset = self.realtime_vr_keypoints_vel
+                    assert self.cfg.motion.num_traj_samples == 1
+
+                task_obs = compute_imitation_observations_teleop_max(
+                    root_pos,
+                    root_rot,
+                    body_pos_subset,
+                    ref_rb_pos_subset,
+                    ref_body_vel_subset,
+                    self.cfg.motion.num_traj_samples,
+                    ref_episodic_offset=self.ref_episodic_offset,
+                )
+
+                if self.cfg.env.add_short_history:
+                    assert self.cfg.env.short_history_length > 0
+                    history_to_be_append = self.trajectories[
+                        :, 0 : self.cfg.env.short_history_length * 63
+                    ]
+                    obs = torch.cat(
+                        [
+                            dof_pos,
+                            dof_vel,
+                            base_ang_vel,
+                            base_gravity,  # 19dim + 19dim + 3dim + 3dim
+                            task_obs,  #
+                            self.actions,
+                            history_to_be_append,
+                        ],
+                        dim=-1,
+                    )  # 19dim
+
+                else:
+                    obs = torch.cat(
+                        [
+                            dof_pos,
+                            dof_vel,
+                            base_ang_vel,
+                            base_gravity,  # 19dim + 19dim + 3dim + 3dim
+                            task_obs,  #
+                            self.actions,
+                        ],
+                        dim=-1,
+                    )  # 19dim
+
+                if self.cfg.use_velocity_estimation:
+                    self.ready_for_train_indices = self.episode_length_buf > 25
+                    current_obs_a = self.trajectories[
+                        self.ready_for_train_indices, :63
+                    ]
+                    if current_obs_a.shape[0] > 0:
+                        raise NotImplementedError
+                        estimate_velocity = self.velocity_estimator(
+                            self.trajectories[self.ready_for_train_indices]
+                        )
+                        obs[self.ready_for_train_indices, 38:41] = (
+                            estimate_velocity
+                        )
             else:
                 raise NotImplementedError
         else:

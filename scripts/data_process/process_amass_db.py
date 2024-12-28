@@ -14,7 +14,7 @@ import torch
 import argparse
 
 from tqdm import tqdm
-from uhc.utils.transform_utils import (
+from smpl_sim.utils.transform_utils import (
     convert_aa_to_orth6d,
     convert_orth_6d_to_aa,
     vertizalize_smpl_root,
@@ -22,8 +22,8 @@ from uhc.utils.transform_utils import (
     rot6d_to_rotmat,
 )
 from scipy.spatial.transform import Rotation as sRot
-from uhc.smpllib.smpl_parser import SMPL_Parser
-from uhc.utils.flags import flags
+from smpl_sim.smpllib.smpl_parser import SMPL_Parser
+from smpl_sim.utils.flags import flags
 
 np.random.seed(1)
 left_right_idx = [
@@ -199,9 +199,9 @@ def process_qpos_list(qpos_list):
         with torch.no_grad():
             amass_pose = amass_pose[:bound]
             batch_size = amass_pose.shape[0]
-            import ipdb
+            # import ipdb
 
-            ipdb.set_trace()
+            # ipdb.set_trace()
             amass_pose = np.concatenate(
                 [amass_pose[:, :66], np.zeros((batch_size, 6))], axis=1
             )  # We use SMPL and not SMPLH
@@ -272,7 +272,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", action="store_true", default=False)
     parser.add_argument(
-        "--path", type=str, default="sample_data/amass_db_smplh.pt"
+        "--path", type=str, default="data/amass_db_smplh.pt"
     )
     args = parser.parse_args()
 
@@ -288,7 +288,7 @@ if __name__ == "__main__":
     seq_counter = 0
     db_dataset = args.path
     amass_db = joblib.load(db_dataset)
-    amass_occlusion = joblib.load("sample_data/amass_copycat_occlusion_v3.pkl")
+    amass_occlusion = joblib.load("data/amass_copycat_occlusion_v3.pkl")
 
     qpos_list = list(amass_db.items())
     np.random.seed(0)
@@ -334,9 +334,9 @@ if __name__ == "__main__":
         if not found:
             print(f"Not found!! {start_name}")
 
-    import ipdb
+    # import ipdb
 
-    ipdb.set_trace()
-    joblib.dump(train_data, f"sample_data/amass_{take_num}_train.pkl")
-    joblib.dump(test_data, f"sample_data/amass_{take_num}_test.pkl")
-    joblib.dump(valid_data, f"sample_data/amass_{take_num}_valid.pkl")
+    # ipdb.set_trace()
+    joblib.dump(train_data, f"data/amass_{take_num}_train.pkl")
+    joblib.dump(test_data, f"data/amass_{take_num}_test.pkl")
+    joblib.dump(valid_data, f"data/amass_{take_num}_valid.pkl")

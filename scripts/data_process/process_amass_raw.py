@@ -170,10 +170,10 @@ def read_seq_data(folder, nsubjects, fps):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--dir", type=str, help="dataset directory", default="data/amass"
+        "--dir", type=str, help="dataset directory", default="data/AMASS/AMASS_Complete"
     )
     parser.add_argument(
-        "--out_dir", type=str, help="dataset directory", default="out"
+        "--out_dir", type=str, help="dataset directory", default="data/"
     )
 
     args = parser.parse_args()

@@ -23,3 +23,8 @@ __pycache__/*
 
 # *.pkl
 .hydra/
+data/AMASS/
+data/smpl/
+data/stompy/amass_train.pkl
+legged_gym/resources/motions/stompy/amass_train.pkl
+data/amass*.*
