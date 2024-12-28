@@ -28,3 +28,4 @@ data/smpl/
 data/stompy/amass_train.pkl
 legged_gym/resources/motions/stompy/amass_train.pkl
 data/amass*.*
+.ipynb_checkpoints/
