@@ -2401,6 +2401,63 @@ class StompyLeggedRobot(BaseTask):
                     * self.obs_scales.body_pos
                 )
                 curr_obs_len += max_num_bodies * 6
+            elif (
+                self.cfg.motion.teleop_obs_version
+                == "v-teleop-extend-vr-max-nolinvel"
+            ):
+                # local_body_pos.shape, local_body_rot_obs.shape, local_body_vel.shape, local_body_ang_vel.shape, dof_pos.shape, dof_vel.shape
+                # local_body_pos 3x19
+                noise_vec[0 : self.num_dof] = (
+                    noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
+                )
+                # dof vel
+                noise_vec[self.num_dof : 2 * self.num_dof] = (
+                    noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
+                )
+                # base ang vel
+                noise_vec[2 * self.num_dof : 2 * self.num_dof + 3] = (
+                    noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
+                )
+                # base gravity
+                noise_vec[2 * self.num_dof + 3 : 2 * self.num_dof + 6] = (
+                    noise_scales.gravity * noise_level
+                )
+
+                self.self_obs_size = 2 * self.num_dof + 6
+                # ref dof pos
+                if self.cfg.motion.future_tracks:
+                    noise_vec[
+                        2 * self.num_dof
+                        + 9 : 2 * self.num_dof
+                        + 9
+                        + (
+                            len(self.cfg.motion.teleop_selected_keypoints_names)
+                            + 3
+                        )
+                        * 3
+                        * 3
+                        * self.cfg.motion.num_traj_samples
+                    ] = (
+                        noise_scales.ref_body_pos
+                        * noise_level
+                        * self.obs_scales.body_pos
+                    )
+                else:
+                    noise_vec[
+                        2 * self.num_dof
+                        + 9 : 2 * self.num_dof
+                        + 9
+                        + (
+                            len(self.cfg.motion.teleop_selected_keypoints_names)
+                            + 3
+                        )
+                        * 3
+                        * 3
+                    ] = (
+                        noise_scales.ref_body_pos
+                        * noise_level
+                        * self.obs_scales.body_pos
+                    )
             else:
                 raise NotImplementedError
         else:
