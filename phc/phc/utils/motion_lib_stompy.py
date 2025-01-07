@@ -1,31 +1,28 @@
-import numpy as np
-import os
-import yaml
-from tqdm import tqdm
-import os.path as osp
-
-from phc.utils import torch_utils
-import joblib
-import torch
-import torch.multiprocessing as mp
 import copy
 import gc
-from phc.smpllib.smpl_parser import (
-    SMPL_Parser,
-    SMPLH_Parser,
-    SMPLX_Parser,
-)
-from scipy.spatial.transform import Rotation as sRot
+import os
+import os.path as osp
 import random
+
+import joblib
+import numpy as np
+import torch
+import torch.multiprocessing as mp
+import yaml
+from easydict import EasyDict
+from scipy.spatial.transform import Rotation as sRot
+from tqdm import tqdm
+
+from phc.smpllib.smpl_parser import SMPL_Parser, SMPLH_Parser, SMPLX_Parser
+from phc.utils import torch_utils
 from phc.utils.flags import flags
 from phc.utils.motion_lib_base import (
-    MotionLibBase,
     DeviceCache,
-    compute_motion_dof_vels,
     FixHeightMode,
+    MotionLibBase,
+    compute_motion_dof_vels,
 )
 from phc.utils.torch_stompy_humanoid_batch import Stompy_Batch
-from easydict import EasyDict
 
 
 def to_torch(tensor):
@@ -152,6 +149,8 @@ class MotionLibStompy(MotionLibBase):
             "\n****************************** Current motion keys ******************************"
         )
         print("Sampling motion:", sample_idxes[:30])
+        print(f"Number of sampling motions: {len(sample_idxes)}")
+        print(f"Number of current motion: {len(self.curr_motion_keys)}")
         if len(self.curr_motion_keys) < 100:
             print(self.curr_motion_keys)
         else:

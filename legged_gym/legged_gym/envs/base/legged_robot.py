@@ -428,6 +428,7 @@ class LeggedRobot(BaseTask):
                 )
                 torch.save(self.velocity_estimator.state_dict(), load_path)
 
+        
         return (
             self.obs_buf,
             self.privileged_obs_buf,

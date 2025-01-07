@@ -26,7 +26,7 @@ from legged_gym.utils.isaacgym_utils import (
     get_euler_xyz as get_euler_xyz_in_tensor,
 )
 from legged_gym.utils.helpers import class_to_dict
-from legged_gym.utils.transform import apply_rotation_to_quat_z
+from legged_gym.utils.transform  import apply_rotation_to_quat_z
 from .legged_robot_config import LeggedRobotCfg
 from .lpf import ActionFilterButter, ActionFilterExp, ActionFilterButterTorch
 

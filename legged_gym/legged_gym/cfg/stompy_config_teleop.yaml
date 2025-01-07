@@ -35,6 +35,9 @@ load_run: ""
 num_envs: 4096
 checkpoint: 0
 
+record_video: True
+video_path: "./logs/isaac_capture.mp4"
+
 joystick: False
 tmp_freeze_upper: False
 max_iterations: 1000000

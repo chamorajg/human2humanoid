@@ -1,24 +1,27 @@
-import sys
-from legged_gym import LEGGED_GYM_ROOT_DIR
 import os
+import sys
+from datetime import datetime
 
+import cv2
+import hydra
 import isaacgym
-from isaacgym import gymapi
-from legged_gym.envs import *
-from legged_gym.utils import (
-    get_args,
-    export_policy_as_jit,
-    export_policy_as_onnx,
-    task_registry,
-    Logger,
-)
-
 import numpy as np
 import torch
-from termcolor import colored
-import hydra
-from omegaconf import DictConfig, OmegaConf
 from easydict import EasyDict
+from isaacgym import gymapi
+from omegaconf import DictConfig, OmegaConf
+from termcolor import colored
+from tqdm import tqdm
+
+from legged_gym import LEGGED_GYM_ROOT_DIR
+from legged_gym.envs import *
+from legged_gym.utils import (
+    Logger,
+    export_policy_as_jit,
+    export_policy_as_onnx,
+    get_args,
+    task_registry,
+)
 from legged_gym.utils.helpers import class_to_dict
 
 NOROSPY = False
@@ -50,6 +53,58 @@ def dict_compare(d1, d2):
     return added, removed, modified, same
 
 
+class VideoRecorder:
+    """Utility class for logging evaluation videos."""
+
+    def __init__(self, root_dir, render_size=384, fps=25):
+        self.save_dir = (
+            os.path.join(root_dir, "eval_video") if root_dir else None
+        )
+        self.render_size = render_size
+        self.fps = fps
+        self.frames_length = 0
+        self.enabled = False
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
+        now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        # Creates a directory to store videos.
+        os.makedirs(self.save_dir, exist_ok=True)
+        self.dir = os.path.join(self.save_dir, now + ".mp4")
+        self.video = cv2.VideoWriter(self.dir, fourcc, float(self.fps), (1920, 1080))
+
+    def init(self, env, stompypro, enabled=True):
+        self.frames_length = 0
+        self.enabled = self.save_dir and enabled
+        self.record(env, stompypro)
+
+    def record(self, env, stompypro):
+        env.gym.fetch_results(env.sim, True)
+        env.gym.step_graphics(env.sim)
+        env.gym.render_all_camera_sensors(env.sim)
+        img = env.gym.get_camera_image(
+            env.sim, env.envs[0], stompypro, gymapi.IMAGE_COLOR
+        )
+        img = np.reshape(img, (1080, 1920, 4))
+        img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
+        cv2.imwrite(os.path.join(self.save_dir, f"image_{self.frames_length}.png"), img)
+        self.video.write(img)
+        self.frames_length += 1
+
+        if self.frames_length == 25:
+            self.video.release()
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
+            now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            self.dir = os.path.join(self.save_dir, now + ".mp4")
+            self.video = cv2.VideoWriter(
+                self.dir, fourcc, float(self.fps), (1920, 1080)
+            )
+            self.frames_length = 0
+
+    def save(
+        self,
+    ):
+        self.video.release()
+
+
 @hydra.main(
     version_base=None,
     config_path="../cfg",
@@ -63,7 +118,7 @@ def play(cfg_hydra: DictConfig) -> None:
 
     # if not env_cfg.train_velocity_estimation:
     env_cfg.env.num_envs = 1
-    env_cfg.viewer.debug_viz = True
+    env_cfg.viewer.debug_viz = False
     env_cfg.motion.visualize = False
     env_cfg.terrain.curriculum = False
     env_cfg.terrain.mesh_type = "trimesh"
@@ -106,13 +161,18 @@ def play(cfg_hydra: DictConfig) -> None:
         env_cfg.commands.ranges.lin_vel_y = [0.0, 0.0]
         env_cfg.commands.ranges.ang_vel_yaw = [0.0, 0.0]
         from pynput import keyboard
+
         from legged_gym.utils import key_response_fn
 
     # prepare environment
-    print("Here")
     env, _ = task_registry.make_env_hydra(
         name=cfg_hydra.task, hydra_cfg=cfg_hydra, env_cfg=env_cfg
     )
+
+    camera_properties = gymapi.CameraProperties()
+    camera_properties.width = 1920
+    camera_properties.height = 1080
+    stompypro = env.gym.create_camera_sensor(env.envs[0], camera_properties)
 
     logger = Logger(env.dt)
     robot_index = 0  # which robot is used for logging
@@ -123,6 +183,10 @@ def play(cfg_hydra: DictConfig) -> None:
     )  # number of steps before print average episode rewards
 
     obs = env.get_observations()
+
+    video = VideoRecorder(
+        "/home/chandramouli/human2humanoid/legged_gym/output/stompypro"
+    )
 
     if env_cfg.motion.realtime_vr_keypoints:
         init_root_pos = env._rigid_body_pos[..., 0, :].clone()
@@ -193,9 +257,15 @@ def play(cfg_hydra: DictConfig) -> None:
 
     i = 0
 
+    if env_cfg.get("record_video", False):
+        video.init(env, stompypro, enabled=True)
+    pbar = tqdm(total=env.max_episode_length + 1)
     while (not NOROSPY and not rospy.is_shutdown()) or (NOROSPY):
         actions = policy(obs.detach())
         obs, _, rews, dones, infos = env.step(actions.detach())
+
+        if env_cfg.get("record_video", False):
+            video.record(env, stompypro)
 
         if env_cfg.motion.realtime_vr_keypoints:
             avpposeinfo.check()
@@ -239,6 +309,10 @@ def play(cfg_hydra: DictConfig) -> None:
         elif i == stop_rew_log:
             pass
         i += 1
+        pbar.update(1)
+
+    if env_cfg.get("record_video", False):
+        video.save()
 
 
 if __name__ == "__main__":

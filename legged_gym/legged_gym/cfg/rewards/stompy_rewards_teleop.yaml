@@ -10,7 +10,7 @@ scales:
   dof_pos_limits : -100.0*1.25
   dof_vel_limits : -50.
   termination : -200*1.25
-  feet_contact_forces : -0.75 # 0.125
+  feet_contact_forces : 0.125 # -0.75 # 0.125
   stumble : -1000.0*1.25
   feet_air_time_teleop : 1000
   slippage : -30.0*1.25
@@ -49,7 +49,7 @@ soft_dof_pos_limit : 0.85 # percentage of urdf limits values above this limit ar
 soft_dof_vel_limit : 0.85
 soft_torque_limit : 0.85
 
-max_contact_force : 500.
+max_contact_force : 750.
 
 base_height_target : 0.63
 body_pos_sigma : 0.5
@@ -95,15 +95,15 @@ teleop_joint_pos_selection :
   R_elbow_x: 2.0
   # lower body
   L_hip_y: 2.0
-  L_hip_x: 0.5
-  L_hip_z: 0.5
-  L_knee: 0.5
-  L_ankle_y: 0.5
+  L_hip_x: 5.0
+  L_hip_z: 5.0
+  L_knee: 5.0
+  L_ankle_y: 5.0
   R_hip_y: 2.0
-  R_hip_x: 0.5
-  R_hip_z: 0.5
-  R_knee: 0.5
-  R_ankle_y: 0.5
+  R_hip_x: 5.0
+  R_hip_z: 5.0
+  R_knee: 5.0
+  R_ankle_y: 5.0
 
 # curriculum: False
 sigma_curriculum: False
