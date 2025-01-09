@@ -1,46 +1,36 @@
-from legged_gym import LEGGED_GYM_ROOT_DIR, envs
-import time
-from warnings import WarningMessage
-import numpy as np
-import os
-
-from isaacgym.torch_utils import *
-from phc.utils import torch_utils
-from isaacgym import gymtorch, gymapi, gymutil
-import torch.nn.functional as F
-import torch
-from torch import Tensor
-from typing import Tuple, Dict
 import copy
-from legged_gym.utils.math import (
-    quat_apply_yaw,
-    wrap_to_pi,
-    torch_rand_sqrt_float,
-)
+import os
+import time
+from typing import Dict, OrderedDict, Tuple
+from warnings import WarningMessage
 
-from legged_gym import LEGGED_GYM_ROOT_DIR
-from legged_gym.envs.base.base_task import BaseTask
-from legged_gym.utils.terrain import Terrain
-from legged_gym.utils.math import wrap_to_pi
-from legged_gym.utils.isaacgym_utils import (
-    get_euler_xyz as get_euler_xyz_in_tensor,
-)
-from legged_gym.utils.helpers import class_to_dict
-from legged_gym.utils.transform import apply_rotation_to_quat_z
-from .legged_robot_config import LeggedRobotCfg
-from .lpf import ActionFilterButter, ActionFilterExp, ActionFilterButterTorch
-
-from phc.utils.motion_lib_h1 import MotionLibH1
-from phc.learning.network_loader import load_mcp_mlp
-from poselib.skeleton.skeleton3d import SkeletonTree
-from termcolor import colored
-from rl_games.algos_torch import torch_ext
-from rsl_rl.modules import VelocityEstimator, VelocityEstimatorGRU
-from easydict import EasyDict
-from legged_gym.utils import task_registry
-from phc.learning.network_loader import load_mlp
-from typing import OrderedDict
+import numpy as np
+import torch
+import torch.nn.functional as F
 import torch.optim as optim
+from easydict import EasyDict
+from isaacgym import gymapi, gymtorch, gymutil
+from isaacgym.torch_utils import *
+from rl_games.algos_torch import torch_ext
+from termcolor import colored
+from torch import Tensor
+
+from legged_gym import LEGGED_GYM_ROOT_DIR, envs
+from legged_gym.envs.base.base_task import BaseTask
+from legged_gym.utils import task_registry
+from legged_gym.utils.helpers import class_to_dict
+from legged_gym.utils.isaacgym_utils import get_euler_xyz as get_euler_xyz_in_tensor
+from legged_gym.utils.math import quat_apply_yaw, torch_rand_sqrt_float, wrap_to_pi
+from legged_gym.utils.terrain import Terrain
+from legged_gym.utils.transform import apply_rotation_to_quat_z
+from phc.learning.network_loader import load_mcp_mlp, load_mlp
+from phc.utils import torch_utils
+from phc.utils.motion_lib_h1 import MotionLibH1
+from poselib.skeleton.skeleton3d import SkeletonTree
+from rsl_rl.modules import VelocityEstimator, VelocityEstimatorGRU
+
+from .legged_robot_config import LeggedRobotCfg
+from .lpf import ActionFilterButter, ActionFilterButterTorch, ActionFilterExp
 
 
 class LeggedRobot(BaseTask):
@@ -428,7 +418,9 @@ class LeggedRobot(BaseTask):
                 )
                 torch.save(self.velocity_estimator.state_dict(), load_path)
 
-        
+        if self.record_video and self.cam_handle is not None:
+            self._capture_frame()
+            
         return (
             self.obs_buf,
             self.privileged_obs_buf,
